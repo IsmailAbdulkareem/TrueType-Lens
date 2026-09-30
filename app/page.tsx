@@ -21,49 +21,56 @@ export default function HomePage() {
 
   // Layers state & Undo/Redo History
   const [layers, setLayers] = useState<TextLayer[]>(() =>
-    defaultSample.presetTexts.map((pt) => ({
-      id: pt.id,
-      originalText: pt.text,
-      currentText: pt.suggestedNewText,
-      box: {
+    defaultSample.presetTexts.map((pt) => {
+      const box = {
         ymin: pt.box_2d[0],
         xmin: pt.box_2d[1],
         ymax: pt.box_2d[2],
         xmax: pt.box_2d[3],
-      },
-      fontFamily: pt.fontFamily,
-      fontSize: 0,
-      fontWeight: pt.fontWeight,
-      fontStyle: pt.fontStyle || 'normal',
-      textAlign: 'center',
-      textTransform: 'none',
-      letterSpacing: pt.letterSpacing || 2,
-      lineHeight: 1.15,
-      color: pt.color,
-      opacity: 1,
-      hasOutline: !!pt.outlineColor,
-      outlineColor: pt.outlineColor || '#000000',
-      outlineWidth: pt.outlineWidth || 2,
-      hasShadow: !!pt.shadowColor,
-      shadowColor: pt.shadowColor || 'transparent',
-      shadowBlur: pt.shadowBlur || 4,
-      shadowOffsetX: 2,
-      shadowOffsetY: 2,
-      blendMode: (pt.blendMode as GlobalCompositeOperation) || 'source-over',
-      cameraBlur: pt.cameraBlur || 0.4,
-      filmGrain: pt.filmGrain || 10,
-      rotationAngle: pt.rotationAngle || 0,
-      perspectiveSkewX: 0,
-      perspectiveSkewY: 0,
-      inpaintOriginal: true,
-      inpaintPadding: 10,
-      inpaintFeather: 8,
-      backgroundColor: pt.backgroundColor,
-      visible: true,
-    }))
+      };
+      return {
+        id: pt.id,
+        originalText: pt.text,
+        currentText: pt.suggestedNewText,
+        box,
+        originalBox: { ...box },
+        fontFamily: pt.fontFamily,
+        fontSize: 0,
+        fontWeight: pt.fontWeight,
+        fontStyle: pt.fontStyle || 'normal',
+        textAlign: 'center',
+        textTransform: 'none',
+        letterSpacing: pt.letterSpacing || 2,
+        lineHeight: 1.15,
+        color: pt.color,
+        opacity: 1,
+        hasOutline: !!pt.outlineColor,
+        outlineColor: pt.outlineColor || '#000000',
+        outlineWidth: pt.outlineWidth || 2,
+        hasShadow: !!pt.shadowColor,
+        shadowColor: pt.shadowColor || 'transparent',
+        shadowBlur: pt.shadowBlur || 4,
+        shadowOffsetX: 2,
+        shadowOffsetY: 2,
+        blendMode: (pt.blendMode as GlobalCompositeOperation) || 'source-over',
+        cameraBlur: pt.cameraBlur || 0.4,
+        filmGrain: pt.filmGrain || 10,
+        rotationAngle: pt.rotationAngle || 0,
+        perspectiveSkewX: 0,
+        perspectiveSkewY: 0,
+        inpaintOriginal: true,
+        inpaintPadding: 4,
+        inpaintFeather: 2,
+        backgroundColor: pt.backgroundColor,
+        visible: true,
+      };
+    })
   );
 
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(() => defaultSample.presetTexts[0]?.id || null);
+  const [selectedLayerIds, setSelectedLayerIds] = useState<string[]>(() =>
+    defaultSample.presetTexts[0]?.id ? [defaultSample.presetTexts[0].id] : []
+  );
 
   const {
     canUndo,
@@ -129,49 +136,54 @@ export default function HomePage() {
       setImageSrc(dataUri);
       setCurrentSampleId(sample.id);
 
-      const initialLayers: TextLayer[] = sample.presetTexts.map((pt) => ({
-        id: pt.id,
-        originalText: pt.text,
-        currentText: pt.suggestedNewText,
-        box: {
+      const initialLayers: TextLayer[] = sample.presetTexts.map((pt) => {
+        const b = {
           ymin: pt.box_2d[0],
           xmin: pt.box_2d[1],
           ymax: pt.box_2d[2],
           xmax: pt.box_2d[3],
-        },
-        fontFamily: pt.fontFamily,
-        fontSize: 0, // auto
-        fontWeight: pt.fontWeight,
-        fontStyle: pt.fontStyle || 'normal',
-        textAlign: 'center',
-        textTransform: 'none',
-        letterSpacing: pt.letterSpacing || 2,
-        lineHeight: 1.15,
-        color: pt.color,
-        opacity: 1,
-        hasOutline: !!pt.outlineColor,
-        outlineColor: pt.outlineColor || '#000000',
-        outlineWidth: pt.outlineWidth || 2,
-        hasShadow: !!pt.shadowColor,
-        shadowColor: pt.shadowColor || 'transparent',
-        shadowBlur: pt.shadowBlur || 4,
-        shadowOffsetX: 2,
-        shadowOffsetY: 2,
-        blendMode: (pt.blendMode as GlobalCompositeOperation) || 'source-over',
-        cameraBlur: pt.cameraBlur || 0.4,
-        filmGrain: pt.filmGrain || 10,
-        rotationAngle: pt.rotationAngle || 0,
-        perspectiveSkewX: 0,
-        perspectiveSkewY: 0,
-        inpaintOriginal: true,
-        inpaintPadding: 10,
-        inpaintFeather: 8,
-        backgroundColor: pt.backgroundColor,
-        visible: true,
-      }));
+        };
+        return {
+          id: pt.id,
+          originalText: pt.text,
+          currentText: pt.suggestedNewText,
+          box: { ...b },
+          originalBox: { ...b },
+          fontFamily: pt.fontFamily,
+          fontSize: 0, // auto
+          fontWeight: pt.fontWeight,
+          fontStyle: pt.fontStyle || 'normal',
+          textAlign: 'center',
+          textTransform: 'none',
+          letterSpacing: pt.letterSpacing || 2,
+          lineHeight: 1.15,
+          color: pt.color,
+          opacity: 1,
+          hasOutline: !!pt.outlineColor,
+          outlineColor: pt.outlineColor || '#000000',
+          outlineWidth: pt.outlineWidth || 2,
+          hasShadow: !!pt.shadowColor,
+          shadowColor: pt.shadowColor || 'transparent',
+          shadowBlur: pt.shadowBlur || 4,
+          shadowOffsetX: 2,
+          shadowOffsetY: 2,
+          blendMode: (pt.blendMode as GlobalCompositeOperation) || 'source-over',
+          cameraBlur: pt.cameraBlur || 0.4,
+          filmGrain: pt.filmGrain || 10,
+          rotationAngle: pt.rotationAngle || 0,
+          perspectiveSkewX: 0,
+          perspectiveSkewY: 0,
+          inpaintOriginal: true,
+          inpaintPadding: 4,
+          inpaintFeather: 2,
+          backgroundColor: pt.backgroundColor,
+          visible: true,
+        };
+      });
 
       setLayers(initialLayers);
       setSelectedLayerId(initialLayers[0]?.id || null);
+      setSelectedLayerIds(initialLayers[0]?.id ? [initialLayers[0].id] : []);
       resetHistory(initialLayers, `Loaded ${sample.title}`);
       setSplitView(false);
       showToast(`Loaded ${sample.title} demo`, 'info');
@@ -186,6 +198,7 @@ export default function HomePage() {
       setLayers(prev);
       if (selectedLayerId && !prev.find((l) => l.id === selectedLayerId)) {
         setSelectedLayerId(prev[0]?.id || null);
+        setSelectedLayerIds(prev[0]?.id ? [prev[0].id] : []);
       }
       showToast('Undone', 'info');
     }
@@ -197,6 +210,7 @@ export default function HomePage() {
       setLayers(next);
       if (selectedLayerId && !next.find((l) => l.id === selectedLayerId)) {
         setSelectedLayerId(next[0]?.id || null);
+        setSelectedLayerIds(next[0]?.id ? [next[0].id] : []);
       }
       showToast('Redone', 'info');
     }
@@ -213,6 +227,7 @@ export default function HomePage() {
       if (selectedLayerId === id) {
         setSelectedLayerId(null);
       }
+      setSelectedLayerIds((prev) => prev.filter((item) => item !== id));
     },
     [selectedLayerId, pushState]
   );
@@ -232,8 +247,9 @@ export default function HomePage() {
           setLayers([]);
           resetHistory([], 'Uploaded Image');
           setSelectedLayerId(null);
+          setSelectedLayerIds([]);
           setSplitView(false);
-          showToast('Image loaded! Click "Scan Text with AI" to detect text.', 'success');
+          showToast('Image loaded! Click "Scan All with AI" or use Lens tool to edit.', 'success');
         }
       };
       reader.readAsDataURL(file);
@@ -365,16 +381,18 @@ export default function HomePage() {
       // Convert Gemini results to TextLayer objects
       const newLayers: TextLayer[] = elements.map((elem: any, idx: number) => {
         const box = elem.box_2d || [200, 200, 300, 800];
+        const bBox = {
+          ymin: Math.max(0, Math.min(950, box[0])),
+          xmin: Math.max(0, Math.min(950, box[1])),
+          ymax: Math.max(50, Math.min(1000, box[2])),
+          xmax: Math.max(50, Math.min(1000, box[3])),
+        };
         return {
           id: `ai-text-${Date.now()}-${idx}`,
           originalText: elem.text || 'Detected Text',
           currentText: elem.text || 'Detected Text',
-          box: {
-            ymin: Math.max(0, Math.min(950, box[0])),
-            xmin: Math.max(0, Math.min(950, box[1])),
-            ymax: Math.max(50, Math.min(1000, box[2])),
-            xmax: Math.max(50, Math.min(1000, box[3])),
-          },
+          box: { ...bBox },
+          originalBox: { ...bBox },
           fontFamily: elem.fontFamily || 'Montserrat',
           fontSize: 0,
           fontWeight: elem.fontWeight || '700',
@@ -400,8 +418,8 @@ export default function HomePage() {
           perspectiveSkewX: elem.perspectiveSkewX || 0,
           perspectiveSkewY: 0,
           inpaintOriginal: true,
-          inpaintPadding: 2,
-          inpaintFeather: 3,
+          inpaintPadding: 4,
+          inpaintFeather: 2,
           backgroundColor: elem.backgroundColor || '#202020',
           visible: true,
         };
@@ -409,6 +427,7 @@ export default function HomePage() {
 
       setLayers(newLayers);
       setSelectedLayerId(newLayers[0]?.id || null);
+      setSelectedLayerIds(newLayers[0]?.id ? [newLayers[0].id] : []);
       pushState(newLayers, `Auto-detected ${newLayers.length} text layers`);
       showToast(`Detected ${newLayers.length} text elements with matched typography!`, 'success');
     } catch (err: any) {
@@ -581,11 +600,91 @@ export default function HomePage() {
     showToast('Editing text at clicked location. Type your new text!', 'info');
   };
 
+  // Synchronized layer selection
+  const handleSelectLayer = useCallback((id: string | null) => {
+    setSelectedLayerId(id);
+    if (id) {
+      setLayers((currentLayers) => {
+        const layer = currentLayers.find((l) => l.id === id);
+        if (layer?.groupId) {
+          const groupMemberIds = currentLayers
+            .filter((l) => l.groupId === layer.groupId)
+            .map((l) => l.id);
+          setSelectedLayerIds(groupMemberIds);
+        } else {
+          setSelectedLayerIds([id]);
+        }
+        return currentLayers;
+      });
+    } else {
+      setSelectedLayerIds([]);
+    }
+  }, []);
+
+  // Group multiple selected layers
+  const handleGroupLayers = useCallback(
+    (idsToGroup: string[]) => {
+      if (idsToGroup.length < 2) return;
+      const newGroupId = `group-${Date.now()}`;
+      setLayers((prev) => {
+        const next = prev.map((l) =>
+          idsToGroup.includes(l.id) ? { ...l, groupId: newGroupId } : l
+        );
+        pushState(next, `Grouped ${idsToGroup.length} layers`);
+        return next;
+      });
+      setSelectedLayerIds(idsToGroup);
+      showToast(`Grouped ${idsToGroup.length} text layers! You can now drag them as a single object.`, 'success');
+    },
+    [pushState, showToast]
+  );
+
+  // Ungroup layers
+  const handleUngroupLayers = useCallback(
+    (layerId: string) => {
+      setLayers((prev) => {
+        const target = prev.find((l) => l.id === layerId);
+        const groupId = target?.groupId;
+        if (!groupId) return prev;
+
+        const next = prev.map((l) =>
+          l.groupId === groupId ? { ...l, groupId: undefined } : l
+        );
+        pushState(next, 'Ungrouped layers');
+        return next;
+      });
+      setSelectedLayerIds([layerId]);
+      showToast('Ungrouped layers. Layers can now be moved individually.', 'info');
+    },
+    [pushState, showToast]
+  );
+
+  // Batch update layers (used for group dragging without latency)
+  const handleBatchUpdateLayers = useCallback((updatedLayers: TextLayer[]) => {
+    setLayers(updatedLayers);
+  }, []);
+
+  // History commit after drag finishes
+  const handleCommitDragHistory = useCallback(
+    (action: string) => {
+      setLayers((current) => {
+        pushState(current, action);
+        return current;
+      });
+    },
+    [pushState]
+  );
+
   // Update layer with undo/redo recording
   const updateLayer = useCallback(
     (updated: TextLayer, actionLabel: string = 'Updated layer') => {
       setLayers((prev) => {
         const nextLayers = prev.map((l) => (l.id === updated.id ? updated : l));
+        // Skip history recording for live drag movement frames to prevent UI freeze
+        if (actionLabel.includes('silent')) {
+          return nextLayers;
+        }
+
         const isDebounced =
           actionLabel.includes('text') ||
           actionLabel.includes('Typed') ||
@@ -656,13 +755,53 @@ export default function HomePage() {
         let current = [...prev];
 
         for (const op of operations) {
-          if (op.type === 'update') {
+          if (op.type === 'group') {
+            const newGroupId = `group-${Date.now()}`;
+            const targetIds: string[] = op.targetLayerIds || [];
+            current = current.map((l) => {
+              if (targetIds.length === 0 || targetIds.includes(l.id)) {
+                return { ...l, groupId: newGroupId };
+              }
+              return l;
+            });
+            showToast(`Grouped layers via AI Chatbot!`, 'success');
+          } else if (op.type === 'move') {
+            const targetIndex = current.findIndex(
+              (l) =>
+                l.id === op.targetLayerId ||
+                l.currentText.toLowerCase().includes((op.targetLayerId || '').toLowerCase())
+            );
+            if (targetIndex !== -1) {
+              const l = current[targetIndex];
+              const w = l.box.xmax - l.box.xmin;
+              const h = l.box.ymax - l.box.ymin;
+              const dx = typeof op.deltaX === 'number' ? op.deltaX : 0;
+              const dy = typeof op.deltaY === 'number' ? op.deltaY : 0;
+              current[targetIndex] = {
+                ...l,
+                box: {
+                  xmin: Math.round(l.box.xmin + dx),
+                  ymin: Math.round(l.box.ymin + dy),
+                  xmax: Math.round(l.box.xmin + dx + w),
+                  ymax: Math.round(l.box.ymin + dy + h),
+                },
+              };
+            }
+          } else if (op.type === 'delete') {
+            const targetId = op.targetLayerId;
+            current = current.filter(
+              (l) =>
+                l.id !== targetId &&
+                l.currentText.toLowerCase() !== targetId?.toLowerCase()
+            );
+          } else if (op.type === 'update') {
             // Find layer by ID or matching currentText / originalText
             const targetIndex = current.findIndex(
               (l) =>
                 l.id === op.targetLayerId ||
                 l.currentText.toLowerCase() === op.targetLayerId?.toLowerCase() ||
-                (op.updates?.currentText && l.currentText.toLowerCase().includes(op.updates.currentText.toLowerCase()))
+                (op.updates?.currentText && l.currentText.toLowerCase().includes(op.updates.currentText.toLowerCase())) ||
+                (op.targetText && l.currentText.toLowerCase().includes(op.targetText.toLowerCase()))
             );
 
             if (targetIndex !== -1) {
@@ -670,19 +809,22 @@ export default function HomePage() {
               current[targetIndex] = {
                 ...target,
                 ...(op.updates || {}),
+                originalBox: target.originalBox || { ...target.box },
                 inpaintOriginal: true,
-                inpaintPadding: 2,
-                inpaintFeather: 3,
+                inpaintPadding: 4,
+                inpaintFeather: 2,
               };
               setSelectedLayerId(current[targetIndex].id);
             } else if (op.updates) {
               // If not found in existing layers, create it!
               const newId = `chat-text-${Date.now()}`;
+              const defaultBox = { ymin: 420, xmin: 250, ymax: 500, xmax: 750 };
               current.push({
                 id: newId,
                 originalText: op.updates.currentText || 'TEXT',
                 currentText: op.updates.currentText || 'TEXT',
-                box: { ymin: 420, xmin: 250, ymax: 500, xmax: 750 },
+                box: op.updates.box || defaultBox,
+                originalBox: op.updates.box || defaultBox,
                 fontFamily: op.updates.fontFamily || 'Montserrat',
                 fontSize: 0,
                 fontWeight: op.updates.fontWeight || '700',
@@ -708,8 +850,8 @@ export default function HomePage() {
                 perspectiveSkewX: 0,
                 perspectiveSkewY: 0,
                 inpaintOriginal: true,
-                inpaintPadding: 2,
-                inpaintFeather: 3,
+                inpaintPadding: 4,
+                inpaintFeather: 2,
                 backgroundColor: op.updates.backgroundColor || '#FFFFFF',
                 visible: true,
               });
@@ -717,17 +859,19 @@ export default function HomePage() {
             }
           } else if (op.type === 'create' && op.newLayer) {
             const b = op.newLayer.box_2d || [420, 250, 500, 750];
+            const bBox = {
+              ymin: Math.max(0, Math.min(950, b[0])),
+              xmin: Math.max(0, Math.min(950, b[1])),
+              ymax: Math.max(50, Math.min(1000, b[2])),
+              xmax: Math.max(50, Math.min(1000, b[3])),
+            };
             const newId = `chat-created-${Date.now()}`;
             current.push({
               id: newId,
               originalText: op.newLayer.text || 'NEW TEXT',
               currentText: op.newLayer.text || 'NEW TEXT',
-              box: {
-                ymin: Math.max(0, Math.min(950, b[0])),
-                xmin: Math.max(0, Math.min(950, b[1])),
-                ymax: Math.max(50, Math.min(1000, b[2])),
-                xmax: Math.max(50, Math.min(1000, b[3])),
-              },
+              box: { ...bBox },
+              originalBox: { ...bBox },
               fontFamily: op.newLayer.fontFamily || 'Montserrat',
               fontSize: 0,
               fontWeight: op.newLayer.fontWeight || '700',
@@ -753,14 +897,12 @@ export default function HomePage() {
               perspectiveSkewX: 0,
               perspectiveSkewY: 0,
               inpaintOriginal: true,
-              inpaintPadding: 2,
-              inpaintFeather: 3,
+              inpaintPadding: 4,
+              inpaintFeather: 2,
               backgroundColor: op.newLayer.backgroundColor || '#FFFFFF',
               visible: true,
             });
             setSelectedLayerId(newId);
-          } else if (op.type === 'delete' && op.targetLayerId) {
-            current = current.filter((l) => l.id !== op.targetLayerId);
           } else if (op.type === 'generative_inpaint' && op.generativePrompt) {
             handleTriggerAiInpaint(op.generativePrompt);
           }
@@ -986,7 +1128,11 @@ export default function HomePage() {
         <LayersSidebar
           layers={layers}
           selectedLayerId={selectedLayerId}
-          onSelectLayer={setSelectedLayerId}
+          selectedLayerIds={selectedLayerIds}
+          onSelectLayer={handleSelectLayer}
+          onSelectLayers={setSelectedLayerIds}
+          onGroupLayers={handleGroupLayers}
+          onUngroupLayers={handleUngroupLayers}
           onAddLayer={addLayer}
           onToggleVisibility={toggleVisibility}
           onDeleteLayer={deleteLayer}
@@ -1012,8 +1158,12 @@ export default function HomePage() {
           imageSrc={imageSrc}
           layers={layers}
           selectedLayerId={selectedLayerId}
-          onSelectLayer={setSelectedLayerId}
+          selectedLayerIds={selectedLayerIds}
+          onSelectLayer={handleSelectLayer}
+          onSelectLayers={setSelectedLayerIds}
           onUpdateLayer={updateLayer}
+          onBatchUpdateLayers={handleBatchUpdateLayers}
+          onCommitDragHistory={handleCommitDragHistory}
           splitView={splitView}
           splitPosition={splitPosition}
           onSplitPositionChange={setSplitPosition}

@@ -45,25 +45,33 @@ export async function POST(req: NextRequest) {
       color: l.color,
       textAlign: l.textAlign,
       fontWeight: l.fontWeight,
+      groupId: l.groupId,
     }));
 
     const systemPrompt = `You are AutoEditor AI, an autonomous multimodal image text editing assistant.
-The user speaks to you in plain English to edit text on an image (e.g. "change the name to Alex", "replace $20 with $45", "make the title red and bold", "change all marks to 100", "remove the date", "add APPROVED stamp").
+The user speaks to you in plain English to edit text on an image. They only have to tell you what to change, and you execute the changes!
+Examples of user instructions:
+- "Change name to Dr. Sarah Connor"
+- "Replace $20 with $45 and make it red"
+- "Make the title bold and change font to Oswald"
+- "Move the date to the right"
+- "Move the subtitle down"
+- "Group all layers and move them left"
+- "Delete the discount line"
+- "Add 'VERIFIED' stamp in top-right"
 
 CURRENT CANVAS LAYERS:
 ${JSON.stringify(layersContext, null, 2)}
 
-YOUR MISSION:
-Interpret the user's intent and execute precise edits:
-1. "update": If the target text matches an existing layer in CURRENT CANVAS LAYERS, update its 'currentText', 'color', 'fontFamily', 'fontWeight', 'fontSize', 'textAlign', 'backgroundColor', etc.
-2. "create": If the user wants to change or add text that is NOT in the current layers list (or visible on the provided image), locate its physical position on the image, output tight bounding box [ymin, xmin, ymax, xmax] (0-1000 scale), background color, text color, and font style so it seamlessly heals the original text and puts the new text in place!
-3. "delete": If the user wants to remove text, specify the target layer id to remove.
-4. "generative_inpaint": If the user asks for visual neural transformation of the whole image (e.g., "repaint as vintage parchment", "add a golden seal", "change background to black marble"), provide a generative inpaint prompt.
+OPERATIONS YOU CAN PERFORM:
+1. "update": When changing text words, font, color, bold, size, alignment, background on existing layer.
+2. "move": When user asks to move text left, right, up, or down (provide deltaX, deltaY in 0-1000 scale: e.g. deltaX: +40 for right, -40 for left, deltaY: +30 for down, -30 for up).
+3. "group": When user asks to group layers (provide targetLayerIds).
+4. "delete": When user asks to remove/erase text.
+5. "create": When user asks to add new text or change text not yet in layers list (provide tight bounding box [ymin, xmin, ymax, xmax], text, font, color, background).
+6. "generative_inpaint": When user asks for total artistic repaint or background alteration.
 
-CRITICAL TYPOGRAPHIC REALISM:
-- When changing text values, retain authentic colors, ink shades, and matching font families.
-- Left-align standard form/document text ('left'), center titles ('center').
-- Keep explanations clear and helpful.`;
+Always explain clearly in "reply" what changes you executed.`;
 
     const parts: any[] = [];
     if (cleanBase64) {
@@ -101,11 +109,24 @@ CRITICAL TYPOGRAPHIC REALISM:
                     properties: {
                       type: {
                         type: Type.STRING,
-                        description: "'update' | 'create' | 'delete' | 'generative_inpaint'",
+                        description: "'update' | 'create' | 'delete' | 'move' | 'group' | 'generative_inpaint'",
                       },
                       targetLayerId: {
                         type: Type.STRING,
-                        description: "Layer ID if updating or deleting an existing layer",
+                        description: "Layer ID if updating, deleting, or moving an existing layer",
+                      },
+                      targetLayerIds: {
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING },
+                        description: "Array of layer IDs if grouping multiple layers",
+                      },
+                      deltaX: {
+                        type: Type.NUMBER,
+                        description: "Horizontal movement delta in 0-1000 scale (+ for right, - for left)",
+                      },
+                      deltaY: {
+                        type: Type.NUMBER,
+                        description: "Vertical movement delta in 0-1000 scale (+ for down, - for up)",
                       },
                       updates: {
                         type: Type.OBJECT,

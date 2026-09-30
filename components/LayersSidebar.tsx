@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Plus,
   Layers,
@@ -16,6 +16,12 @@ import {
   Wand2,
   ScanSearch,
   Bot,
+  Link,
+  Unlink,
+  CheckSquare,
+  Square,
+  FolderPlus,
+  FolderMinus,
 } from 'lucide-react';
 import { TextLayer } from '@/lib/canvas-renderer';
 import { TypographyStyle, extractStylesFromLayers } from '@/lib/style-transfer';
@@ -23,7 +29,11 @@ import { TypographyStyle, extractStylesFromLayers } from '@/lib/style-transfer';
 interface LayersSidebarProps {
   layers: TextLayer[];
   selectedLayerId: string | null;
-  onSelectLayer: (id: string) => void;
+  selectedLayerIds?: string[];
+  onSelectLayer: (id: string | null) => void;
+  onSelectLayers?: (ids: string[]) => void;
+  onGroupLayers?: (layerIds: string[]) => void;
+  onUngroupLayers?: (layerId: string) => void;
   onAddLayer: (style?: TypographyStyle) => void;
   onToggleVisibility: (id: string) => void;
   onDeleteLayer: (id: string) => void;
@@ -47,7 +57,11 @@ interface LayersSidebarProps {
 export function LayersSidebar({
   layers,
   selectedLayerId,
+  selectedLayerIds = [],
   onSelectLayer,
+  onSelectLayers,
+  onGroupLayers,
+  onUngroupLayers,
   onAddLayer,
   onToggleVisibility,
   onDeleteLayer,
@@ -68,6 +82,52 @@ export function LayersSidebar({
   onToggleChat,
 }: LayersSidebarProps) {
   const detectedStyles = extractStylesFromLayers(layers);
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
+
+  // Helper: toggle individual layer selection in multi-select
+  const handleToggleLayerCheck = (layerId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onSelectLayers) return;
+
+    let next: string[];
+    if (selectedLayerIds.includes(layerId)) {
+      next = selectedLayerIds.filter((id) => id !== layerId);
+    } else {
+      next = [...selectedLayerIds, layerId];
+    }
+    onSelectLayers(next);
+    if (next.length > 0) {
+      onSelectLayer(next[next.length - 1]);
+    } else {
+      onSelectLayer(null);
+    }
+  };
+
+  // Helper: click a layer row
+  const handleLayerClick = (layer: TextLayer, e: React.MouseEvent) => {
+    if (e.shiftKey || e.ctrlKey || e.metaKey || multiSelectMode) {
+      handleToggleLayerCheck(layer.id, e);
+      return;
+    }
+
+    // If layer belongs to a group, select all group members together!
+    if (layer.groupId) {
+      const groupMemberIds = layers.filter((l) => l.groupId === layer.groupId).map((l) => l.id);
+      if (onSelectLayers) {
+        onSelectLayers(groupMemberIds);
+      }
+      onSelectLayer(layer.id);
+    } else {
+      if (onSelectLayers) {
+        onSelectLayers([layer.id]);
+      }
+      onSelectLayer(layer.id);
+    }
+  };
+
+  const activeSelectedLayer = layers.find((l) => l.id === selectedLayerId);
+  const isSelectedLayerGrouped = Boolean(activeSelectedLayer?.groupId);
+  const canGroupSelected = selectedLayerIds.length >= 2;
 
   return (
     <aside className="w-64 border-r border-slate-800 bg-slate-900/90 flex flex-col h-full overflow-hidden select-none">
@@ -197,13 +257,52 @@ export function LayersSidebar({
         )}
       </div>
 
-      {/* Layers Header */}
-      <div className="px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between text-xs font-semibold text-slate-400">
+      {/* Layers Header with Group Controls */}
+      <div className="px-3 py-2 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between text-xs font-semibold text-slate-400">
         <div className="flex items-center gap-1.5">
           <Layers className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Text Layers ({layers.length})</span>
+          <span>Layers ({layers.length})</span>
         </div>
+
+        {/* Multi-select toggle */}
+        <button
+          onClick={() => setMultiSelectMode((m) => !m)}
+          title={multiSelectMode ? 'Turn off multi-select' : 'Turn on multi-select checkboxes to group layers'}
+          className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors border ${
+            multiSelectMode
+              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
+              : 'text-slate-400 hover:text-slate-200 border-transparent hover:border-slate-700'
+          }`}
+        >
+          {multiSelectMode ? 'Multi-Select On' : 'Select'}
+        </button>
       </div>
+
+      {/* GROUP LAYERS ACTION BAR (when 2+ layers selected or grouped layer active) */}
+      {(canGroupSelected || isSelectedLayerGrouped) && (
+        <div className="p-2 bg-gradient-to-r from-purple-950/60 to-indigo-950/60 border-b border-purple-800/40 flex items-center justify-between gap-1.5 text-xs">
+          {canGroupSelected && onGroupLayers && (
+            <button
+              onClick={() => onGroupLayers(selectedLayerIds)}
+              className="flex-1 py-1.5 px-2 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm shadow-purple-500/30 transition-all active:scale-95"
+            >
+              <Link className="w-3.5 h-3.5" />
+              <span>Group ({selectedLayerIds.length}) Layers</span>
+            </button>
+          )}
+
+          {isSelectedLayerGrouped && onUngroupLayers && selectedLayerId && (
+            <button
+              onClick={() => onUngroupLayers(selectedLayerId)}
+              title="Ungroup these layers so they move independently"
+              className="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-700/60 font-semibold text-xs flex items-center justify-center gap-1 transition-all"
+            >
+              <Unlink className="w-3.5 h-3.5" />
+              <span>Ungroup</span>
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Layers List */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -237,19 +336,40 @@ export function LayersSidebar({
             </button>
           </div>
         ) : (
-          layers.map((layer, index) => {
+          layers.map((layer) => {
             const isSelected = layer.id === selectedLayerId;
+            const isMultiChecked = selectedLayerIds.includes(layer.id);
+            const isGrouped = Boolean(layer.groupId);
+
             return (
               <div
                 key={layer.id}
-                onClick={() => onSelectLayer(layer.id)}
+                onClick={(e) => handleLayerClick(layer, e)}
                 className={`group flex items-center justify-between p-2 rounded-xl border text-xs cursor-pointer transition-all ${
                   isSelected
-                    ? 'bg-cyan-950/40 border-cyan-500/80 text-white shadow-sm shadow-cyan-950'
+                    ? 'bg-cyan-950/50 border-cyan-500/80 text-white shadow-sm shadow-cyan-950 ring-1 ring-cyan-500/30'
+                    : isMultiChecked
+                    ? 'bg-purple-950/40 border-purple-500/60 text-purple-200'
+                    : isGrouped
+                    ? 'bg-slate-900/90 border-purple-900/40 text-slate-300 hover:border-purple-700/50'
                     : 'bg-slate-900 hover:bg-slate-800/80 border-slate-800/90 text-slate-300'
                 }`}
               >
                 <div className="flex items-center gap-2 overflow-hidden flex-1">
+                  {/* Multi-select checkbox */}
+                  {(multiSelectMode || selectedLayerIds.length > 0) && (
+                    <button
+                      onClick={(e) => handleToggleLayerCheck(layer.id, e)}
+                      className="text-slate-400 hover:text-cyan-400 shrink-0"
+                    >
+                      {isMultiChecked ? (
+                        <CheckSquare className="w-3.5 h-3.5 text-cyan-400" />
+                      ) : (
+                        <Square className="w-3.5 h-3.5 text-slate-600" />
+                      )}
+                    </button>
+                  )}
+
                   {/* Layer Color Tag */}
                   <div
                     className="w-3.5 h-3.5 rounded-full border border-slate-600 shrink-0 shadow-sm"
@@ -258,9 +378,18 @@ export function LayersSidebar({
 
                   {/* Text preview */}
                   <div className="truncate flex-1">
-                    <span className="font-semibold text-slate-200 block truncate">
-                      {layer.currentText || '(Empty text)'}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold text-slate-200 block truncate">
+                        {layer.currentText || '(Empty text)'}
+                      </span>
+                      {/* Group badge */}
+                      {isGrouped && (
+                        <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-0.5 shrink-0">
+                          <Link className="w-2.5 h-2.5" />
+                          <span>Group</span>
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[10px] text-slate-500 block truncate">
                       {layer.fontFamily} • {layer.rotationAngle ? `${layer.rotationAngle}°` : '0°'}
                     </span>
@@ -303,10 +432,10 @@ export function LayersSidebar({
       {/* Footer Helper / Pro Tips */}
       <div className="p-3 border-t border-slate-800 bg-slate-950/60 text-[11px] text-slate-400 space-y-1">
         <div className="flex items-center gap-1 text-cyan-400 font-semibold">
-          <CheckCircle2 className="w-3.5 h-3.5" /> Realism Check
+          <Link className="w-3.5 h-3.5 text-purple-400" /> Group Dragging
         </div>
         <p className="text-[10px] text-slate-500 leading-tight">
-          Adjust camera lens softness & film grain in the Realism tab to make fonts look naturally shot by a camera.
+          Select multiple layers with <span className="text-slate-300 font-semibold">Select</span> or <span className="text-slate-300 font-semibold">Shift+Click</span> and click <span className="text-purple-300 font-semibold">Group</span> to drag them as a single object on the canvas!
         </p>
       </div>
     </aside>

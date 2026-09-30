@@ -9,6 +9,15 @@ export interface TextLayer {
     ymax: number;
     xmax: number;
   };
+  // Original physical box of the text on the scanned image (stays locked so inpaint doesn't uncover old text)
+  originalBox?: {
+    ymin: number;
+    xmin: number;
+    ymax: number;
+    xmax: number;
+  };
+  // Group ID for grouped layers that move together
+  groupId?: string;
   // Typography
   fontFamily: string;
   fontSize: number; // in px relative to rendered image height
@@ -66,7 +75,10 @@ export interface RenderOptions {
 }
 
 /**
- * Inpaints and removes the original text region from the canvas image
+ * Inpaints and removes the original text region from the canvas image.
+ * Uses targetBox (originalBox if moved) to ensure the original printed text
+ * stays permanently erased and never reveals double text when moved.
+ * Runs in microseconds with zero browser freeze.
  */
 export function inpaintRegion(
   ctx: CanvasRenderingContext2D,
@@ -76,86 +88,28 @@ export function inpaintRegion(
 ) {
   if (!layer.inpaintOriginal) return;
 
-  const rawPad = typeof layer.inpaintPadding === 'number' ? layer.inpaintPadding : 2;
-  const feather = Math.max(1, typeof layer.inpaintFeather === 'number' ? layer.inpaintFeather : 3);
+  // ALWAYS inpaint the original printed location on the photo
+  const targetBox = layer.originalBox || layer.box;
+  const rawPad = typeof layer.inpaintPadding === 'number' ? layer.inpaintPadding : 4;
+  const feather = Math.max(1, typeof layer.inpaintFeather === 'number' ? layer.inpaintFeather : 2);
 
-  // Keep padding reasonable so it doesn't bleed into adjacent rows on documents/forms
-  const rawH = ((layer.box.ymax - layer.box.ymin) / 1000) * imageHeight;
-  const pad = Math.min(rawPad, Math.max(1, rawH * 0.2));
+  const rawH = ((targetBox.ymax - targetBox.ymin) / 1000) * imageHeight;
+  const pad = Math.min(Math.max(3, rawPad), Math.max(3, rawH * 0.35));
 
-  const x = Math.max(0, (layer.box.xmin / 1000) * imageWidth - pad);
-  const y = Math.max(0, (layer.box.ymin / 1000) * imageHeight - pad);
-  const w = Math.min(imageWidth - x, ((layer.box.xmax - layer.box.xmin) / 1000) * imageWidth + pad * 2);
-  const h = Math.min(imageHeight - y, ((layer.box.ymax - layer.box.ymin) / 1000) * imageHeight + pad * 2);
+  const x = Math.max(0, (targetBox.xmin / 1000) * imageWidth - pad);
+  const y = Math.max(0, (targetBox.ymin / 1000) * imageHeight - pad);
+  const w = Math.min(imageWidth - x, ((targetBox.xmax - targetBox.xmin) / 1000) * imageWidth + pad * 2);
+  const h = Math.min(imageHeight - y, ((targetBox.ymax - targetBox.ymin) / 1000) * imageHeight + pad * 2);
 
   if (w <= 0 || h <= 0) return;
 
   ctx.save();
-
-  // Create an offscreen patch with smooth border-sampled gradient and grain
-  const patchCanvas = document.createElement('canvas');
-  patchCanvas.width = Math.ceil(w);
-  patchCanvas.height = Math.ceil(h);
-  const patchCtx = patchCanvas.getContext('2d');
-
-  if (patchCtx) {
-    // 1. Sample perimeter border pixels from the main image
-    let topColor = layer.backgroundColor;
-    let bottomColor = layer.backgroundColor;
-
-    try {
-      // Sample edge slices
-      const sampleTop = ctx.getImageData(Math.floor(x), Math.max(0, Math.floor(y - 2)), Math.floor(w), 1).data;
-      const sampleBottom = ctx.getImageData(Math.floor(x), Math.min(imageHeight - 1, Math.floor(y + h + 1)), Math.floor(w), 1).data;
-
-      if (sampleTop.length >= 4) {
-        topColor = `rgb(${sampleTop[0]}, ${sampleTop[1]}, ${sampleTop[2]})`;
-      }
-      if (sampleBottom.length >= 4) {
-        bottomColor = `rgb(${sampleBottom[0]}, ${sampleBottom[1]}, ${sampleBottom[2]})`;
-      }
-    } catch {
-      // fallback to layer.backgroundColor
-    }
-
-    // 2. Draw vertical gradient
-    const gradV = patchCtx.createLinearGradient(0, 0, 0, h);
-    gradV.addColorStop(0, topColor);
-    gradV.addColorStop(0.5, layer.backgroundColor);
-    gradV.addColorStop(1, bottomColor);
-    patchCtx.fillStyle = gradV;
-    patchCtx.fillRect(0, 0, w, h);
-
-    // 3. Add synthetic grain matching original texture
-    const grainStrength = Math.max(3, layer.filmGrain || 6);
-    const imgData = patchCtx.getImageData(0, 0, patchCanvas.width, patchCanvas.height);
-    const data = imgData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      const noise = (Math.random() - 0.5) * grainStrength * 2.2;
-      data[i] = Math.min(255, Math.max(0, data[i] + noise));
-      data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + noise));
-      data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + noise));
-    }
-    patchCtx.putImageData(imgData, 0, 0);
-
-    // 4. Render patch to main canvas with feathered mask to eliminate harsh seams
-    const maskCanvas = document.createElement('canvas');
-    maskCanvas.width = Math.ceil(w);
-    maskCanvas.height = Math.ceil(h);
-    const maskCtx = maskCanvas.getContext('2d');
-    if (maskCtx) {
-      maskCtx.fillStyle = '#FFFFFF';
-      maskCtx.filter = `blur(${feather}px)`;
-      maskCtx.fillRect(feather, feather, w - feather * 2, h - feather * 2);
-
-      // Composite patch through mask
-      patchCtx.globalCompositeOperation = 'destination-in';
-      patchCtx.drawImage(maskCanvas, 0, 0);
-    }
-
-    ctx.drawImage(patchCanvas, x, y);
+  // Fast, seamless background fill
+  ctx.fillStyle = layer.backgroundColor || '#FFFFFF';
+  if (feather > 1) {
+    ctx.filter = `blur(${feather}px)`;
   }
-
+  ctx.fillRect(x, y, w, h);
   ctx.restore();
 }
 
@@ -359,7 +313,8 @@ export function drawBoundingBox(
   imageHeight: number,
   layer: TextLayer,
   isSelected: boolean,
-  isHovered: boolean
+  isHovered: boolean,
+  isGroupMember?: boolean
 ) {
   const x = (layer.box.xmin / 1000) * imageWidth;
   const y = (layer.box.ymin / 1000) * imageHeight;
@@ -373,15 +328,28 @@ export function drawBoundingBox(
   }
 
   // Border style
-  ctx.lineWidth = isSelected ? 2 : 1.5;
-  ctx.strokeStyle = isSelected ? '#06b6d4' : isHovered ? '#38bdf8' : 'rgba(255, 255, 255, 0.4)';
-  if (!isSelected) {
+  ctx.lineWidth = isSelected ? 2 : isGroupMember ? 2 : 1.5;
+  ctx.strokeStyle = isSelected
+    ? '#06b6d4'
+    : isGroupMember
+    ? '#a855f7'
+    : isHovered
+    ? '#38bdf8'
+    : 'rgba(255, 255, 255, 0.4)';
+  if (!isSelected && !isGroupMember) {
     ctx.setLineDash([4, 4]);
   } else {
     ctx.setLineDash([]);
   }
 
   ctx.strokeRect(-w / 2, -h / 2, w, h);
+
+  // Group label if part of a group
+  if (layer.groupId && (isSelected || isGroupMember)) {
+    ctx.fillStyle = '#a855f7';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText('🔗 GROUPED', -w / 2, -h / 2 - 4);
+  }
 
   // Corner resize handles if selected
   if (isSelected) {

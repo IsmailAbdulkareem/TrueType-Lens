@@ -28,8 +28,12 @@ interface EditorCanvasProps {
   imageSrc: string | null;
   layers: TextLayer[];
   selectedLayerId: string | null;
+  selectedLayerIds?: string[];
   onSelectLayer: (id: string | null) => void;
+  onSelectLayers?: (ids: string[]) => void;
   onUpdateLayer: (layer: TextLayer, actionLabel?: string) => void;
+  onBatchUpdateLayers?: (layers: TextLayer[]) => void;
+  onCommitDragHistory?: (action: string) => void;
   splitView: boolean;
   splitPosition: number;
   onSplitPositionChange: (pos: number) => void;
@@ -52,8 +56,12 @@ export function EditorCanvas({
   imageSrc,
   layers,
   selectedLayerId,
+  selectedLayerIds = [],
   onSelectLayer,
+  onSelectLayers,
   onUpdateLayer,
+  onBatchUpdateLayers,
+  onCommitDragHistory,
   splitView,
   splitPosition,
   onSplitPositionChange,
@@ -84,12 +92,13 @@ export function EditorCanvas({
   // Layer Interaction State
   const [hoveredLayerId, setHoveredLayerId] = useState<string | null>(null);
   const [isDraggingLayer, setIsDraggingLayer] = useState(false);
+  const [hasMovedDuringDrag, setHasMovedDuringDrag] = useState(false);
   const [activeHandle, setActiveHandle] = useState<string | null>(null); // 'move' | 'nw' | 'ne' | 'se' | 'sw' | 'rotate'
   const [layerDragStart, setLayerDragStart] = useState<{
     mouseX: number;
     mouseY: number;
-    initialBox: TextLayer['box'];
     initialRotation: number;
+    initialBoxes: Record<string, TextLayer['box']>;
   } | null>(null);
 
   // Inline canvas direct text editing
@@ -123,29 +132,6 @@ export function EditorCanvas({
 
   // Split-slider drag state
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
-
-  // Load image
-  useEffect(() => {
-    if (!imageSrc) return;
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = imageSrc;
-    img.onload = () => {
-      baseImageRef.current = img;
-      setImageDimensions({ width: img.width, height: img.height });
-      // Fit to container
-      if (containerRef.current) {
-        const cWidth = containerRef.current.clientWidth - 48;
-        const cHeight = containerRef.current.clientHeight - 48;
-        const scale = Math.min(cWidth / img.width, cHeight / img.height, 1);
-        setZoom(scale > 0 ? scale : 1);
-        setPan({
-          x: Math.round((containerRef.current.clientWidth - img.width * scale) / 2),
-          y: Math.round((containerRef.current.clientHeight - img.height * scale) / 2),
-        });
-      }
-    };
-  }, [imageSrc]);
 
   // Main Render Loop
   const renderCanvas = useCallback(() => {
@@ -240,9 +226,26 @@ export function EditorCanvas({
       layers.forEach((layer) => {
         if (layer.visible) {
           const isSelected = layer.id === selectedLayerId;
+          const isMultiSelected = selectedLayerIds.includes(layer.id);
           const isHovered = layer.id === hoveredLayerId && !isSelected;
-          if (isSelected || isHovered) {
-            drawBoundingBox(ctx, img.width, img.height, layer, isSelected, isHovered);
+          const isGroupMember =
+            isMultiSelected ||
+            Boolean(
+              selectedLayerId &&
+                layer.groupId &&
+                layers.find((l) => l.id === selectedLayerId)?.groupId === layer.groupId
+            );
+
+          if (isSelected || isMultiSelected || isHovered || isGroupMember) {
+            drawBoundingBox(
+              ctx,
+              img.width,
+              img.height,
+              layer,
+              isSelected,
+              isHovered,
+              Boolean(isGroupMember && !isSelected)
+            );
           }
         }
       });
@@ -311,6 +314,7 @@ export function EditorCanvas({
   }, [
     layers,
     selectedLayerId,
+    selectedLayerIds,
     hoveredLayerId,
     splitView,
     splitPosition,
@@ -318,10 +322,93 @@ export function EditorCanvas({
     lensBox,
   ]);
 
-  // Re-render whenever layers, selection, or image change
+  // Load image
+  useEffect(() => {
+    if (!imageSrc) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = imageSrc;
+    img.onload = () => {
+      baseImageRef.current = img;
+      setImageDimensions({ width: img.width, height: img.height });
+      // Fit to container
+      if (containerRef.current) {
+        const cWidth = containerRef.current.clientWidth - 48;
+        const cHeight = containerRef.current.clientHeight - 48;
+        const scale = Math.min(cWidth / img.width, cHeight / img.height, 1);
+        setZoom(scale > 0 ? scale : 1);
+        setPan({
+          x: Math.round((containerRef.current.clientWidth - img.width * scale) / 2),
+          y: Math.round((containerRef.current.clientHeight - img.height * scale) / 2),
+        });
+      }
+      setTimeout(() => {
+        renderCanvas();
+      }, 10);
+    };
+  }, [imageSrc, renderCanvas]);
+
+  // Re-render whenever layers or selection change
   useEffect(() => {
     renderCanvas();
   }, [renderCanvas]);
+
+  // Keyboard Arrow Keys to nudge selected layer(s) smoothly
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        if (!selectedLayerId && selectedLayerIds.length === 0) return;
+        e.preventDefault();
+
+        const step = e.shiftKey ? 8 : 2;
+        let deltaX = 0;
+        let deltaY = 0;
+        if (e.key === 'ArrowLeft') deltaX = -step;
+        if (e.key === 'ArrowRight') deltaX = step;
+        if (e.key === 'ArrowUp') deltaY = -step;
+        if (e.key === 'ArrowDown') deltaY = step;
+
+        const targetIds = selectedLayerIds.length > 0 ? selectedLayerIds : [selectedLayerId!];
+        const updated = layers.map((l) => {
+          if (targetIds.includes(l.id)) {
+            const w = l.box.xmax - l.box.xmin;
+            const h = l.box.ymax - l.box.ymin;
+            const newXmin = l.box.xmin + deltaX;
+            const newYmin = l.box.ymin + deltaY;
+            return {
+              ...l,
+              box: {
+                xmin: Math.round(newXmin),
+                ymin: Math.round(newYmin),
+                xmax: Math.round(newXmin + w),
+                ymax: Math.round(newYmin + h),
+              },
+            };
+          }
+          return l;
+        });
+
+        if (onBatchUpdateLayers) {
+          onBatchUpdateLayers(updated);
+        } else if (selectedLayerId) {
+          const s = updated.find((l) => l.id === selectedLayerId);
+          if (s) onUpdateLayer(s, 'Nudge layer');
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedLayerId, selectedLayerIds, layers, onBatchUpdateLayers, onUpdateLayer]);
 
   // Convert mouse screen coordinates to canvas image pixel coordinates
   const screenToCanvasCoords = (clientX: number, clientY: number) => {
@@ -454,18 +541,40 @@ export function EditorCanvas({
     const { layer, handle } = hitTest(x, y);
 
     if (layer) {
+      // Find all layers to move together (if group or multi-selected)
+      let targetLayers: TextLayer[] = [layer];
+      if (layer.groupId) {
+        targetLayers = layers.filter((l) => l.groupId === layer.groupId);
+      } else if (selectedLayerIds.length > 1 && selectedLayerIds.includes(layer.id)) {
+        targetLayers = layers.filter((l) => selectedLayerIds.includes(l.id));
+      }
+
       onSelectLayer(layer.id);
+      if (onSelectLayers) {
+        onSelectLayers(targetLayers.map((l) => l.id));
+      }
+
       setIsDraggingLayer(true);
+      setHasMovedDuringDrag(false);
       setActiveHandle(handle);
+
+      const initialBoxes: Record<string, TextLayer['box']> = {};
+      targetLayers.forEach((l) => {
+        initialBoxes[l.id] = { ...l.box };
+      });
+
       setLayerDragStart({
         mouseX: x,
         mouseY: y,
-        initialBox: { ...layer.box },
         initialRotation: layer.rotationAngle || 0,
+        initialBoxes,
       });
     } else {
       // Clicked outside any layer -> start canvas pan or deselect
       onSelectLayer(null);
+      if (onSelectLayers) {
+        onSelectLayers([]);
+      }
       setIsPanning(true);
       setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     }
@@ -525,47 +634,93 @@ export function EditorCanvas({
       const deltaX = x - layerDragStart.mouseX;
       const deltaY = y - layerDragStart.mouseY;
 
+      if (Math.hypot(deltaX, deltaY) > 2) {
+        setHasMovedDuringDrag(true);
+      }
+
       // Delta in 0-1000 scale
       const deltaScaleX = (deltaX / img.width) * 1000;
       const deltaScaleY = (deltaY / img.height) * 1000;
 
-      const { initialBox } = layerDragStart;
-
       if (activeHandle === 'move') {
-        const newXmin = Math.max(0, Math.min(1000 - (initialBox.xmax - initialBox.xmin), initialBox.xmin + deltaScaleX));
-        const newYmin = Math.max(0, Math.min(1000 - (initialBox.ymax - initialBox.ymin), initialBox.ymin + deltaScaleY));
-        const width = initialBox.xmax - initialBox.xmin;
-        const height = initialBox.ymax - initialBox.ymin;
+        const targetIds = Object.keys(layerDragStart.initialBoxes);
 
-        onUpdateLayer({
-          ...selected,
-          box: {
-            xmin: Math.round(newXmin),
-            ymin: Math.round(newYmin),
-            xmax: Math.round(newXmin + width),
-            ymax: Math.round(newYmin + height),
-          },
-        });
+        if (targetIds.length <= 1) {
+          const initialBox = layerDragStart.initialBoxes[selected.id] || selected.box;
+          const width = initialBox.xmax - initialBox.xmin;
+          const height = initialBox.ymax - initialBox.ymin;
+
+          // Free left/right movement across whole canvas
+          const newXmin = Math.max(-500, Math.min(1500, initialBox.xmin + deltaScaleX));
+          const newYmin = Math.max(-500, Math.min(1500, initialBox.ymin + deltaScaleY));
+
+          onUpdateLayer(
+            {
+              ...selected,
+              box: {
+                xmin: Math.round(newXmin),
+                ymin: Math.round(newYmin),
+                xmax: Math.round(newXmin + width),
+                ymax: Math.round(newYmin + height),
+              },
+            },
+            'move-silent'
+          );
+        } else {
+          // GROUP MOVE: move all grouped / multi-selected layers together!
+          const updatedLayers = layers.map((l) => {
+            const initBox = layerDragStart.initialBoxes[l.id];
+            if (!initBox) return l;
+            const w = initBox.xmax - initBox.xmin;
+            const h = initBox.ymax - initBox.ymin;
+            const newXmin = Math.max(-500, Math.min(1500, initBox.xmin + deltaScaleX));
+            const newYmin = Math.max(-500, Math.min(1500, initBox.ymin + deltaScaleY));
+            return {
+              ...l,
+              box: {
+                xmin: Math.round(newXmin),
+                ymin: Math.round(newYmin),
+                xmax: Math.round(newXmin + w),
+                ymax: Math.round(newYmin + h),
+              },
+            };
+          });
+
+          if (onBatchUpdateLayers) {
+            onBatchUpdateLayers(updatedLayers);
+          } else {
+            const updated = updatedLayers.find((l) => l.id === selected.id);
+            if (updated) onUpdateLayer(updated, 'move-silent');
+          }
+        }
       } else if (activeHandle === 'se') {
-        onUpdateLayer({
-          ...selected,
-          box: {
-            ...selected.box,
-            xmax: Math.max(selected.box.xmin + 40, Math.round(initialBox.xmax + deltaScaleX)),
-            ymax: Math.max(selected.box.ymin + 20, Math.round(initialBox.ymax + deltaScaleY)),
+        const initialBox = layerDragStart.initialBoxes[selected.id] || selected.box;
+        onUpdateLayer(
+          {
+            ...selected,
+            box: {
+              ...selected.box,
+              xmax: Math.max(selected.box.xmin + 20, Math.round(initialBox.xmax + deltaScaleX)),
+              ymax: Math.max(selected.box.ymin + 10, Math.round(initialBox.ymax + deltaScaleY)),
+            },
           },
-        });
+          'resize-silent'
+        );
       } else if (activeHandle === 'rotate') {
+        const initialBox = layerDragStart.initialBoxes[selected.id] || selected.box;
         const centerX = ((initialBox.xmin + initialBox.xmax) / 2 / 1000) * img.width;
         const centerY = ((initialBox.ymin + initialBox.ymax) / 2 / 1000) * img.height;
         const angleRad = Math.atan2(y - centerY, x - centerX);
         let degrees = (angleRad * 180) / Math.PI + 90;
         if (degrees > 180) degrees -= 360;
         if (degrees < -180) degrees += 360;
-        onUpdateLayer({
-          ...selected,
-          rotationAngle: Math.round(degrees * 10) / 10,
-        });
+        onUpdateLayer(
+          {
+            ...selected,
+            rotationAngle: Math.round(degrees * 10) / 10,
+          },
+          'rotate-silent'
+        );
       }
       return;
     }
@@ -607,8 +762,16 @@ export function EditorCanvas({
       return;
     }
 
+    // Commit drag to history once on mouseup
+    if (isDraggingLayer && hasMovedDuringDrag) {
+      if (onCommitDragHistory) {
+        onCommitDragHistory('Moved layer(s)');
+      }
+    }
+
     setIsPanning(false);
     setIsDraggingLayer(false);
+    setHasMovedDuringDrag(false);
     setActiveHandle(null);
     setLayerDragStart(null);
     setIsDraggingSplit(false);
