@@ -1,0 +1,6 @@
+{
+  "name": "TrueType Lens - Realistic Image Text Editor",
+  "description": "Seamlessly edit text on any photo or graphic with automatic color matching, font detection, perspective alignment, authentic grain blending, and natural background healing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
