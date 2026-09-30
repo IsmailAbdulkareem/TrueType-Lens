@@ -12,6 +12,8 @@ import {
   Eye,
   Sparkles,
   MousePointer,
+  ScanSearch,
+  Plus,
 } from 'lucide-react';
 import {
   TextLayer,
@@ -19,6 +21,7 @@ import {
   inpaintRegion,
   drawBoundingBox,
   samplePixelColor,
+  cropCanvasRegion,
 } from '@/lib/canvas-renderer';
 
 interface EditorCanvasProps {
@@ -38,6 +41,11 @@ interface EditorCanvasProps {
   showOriginalHold: boolean;
   isStylePickerActive?: boolean;
   onPickStyleFromLayer?: (sourceLayer: TextLayer) => void;
+  isLensMode?: boolean;
+  onToggleLensMode?: () => void;
+  onBoxSelected?: (box: { ymin: number; xmin: number; ymax: number; xmax: number }, croppedBase64: string | null) => void;
+  onDoubleClickCreateText?: (coords: { canvasX: number; canvasY: number }, sampledBg: string, sampledText: string) => void;
+  isAnalyzingLens?: boolean;
 }
 
 export function EditorCanvas({
@@ -56,6 +64,11 @@ export function EditorCanvas({
   showOriginalHold,
   isStylePickerActive = false,
   onPickStyleFromLayer,
+  isLensMode = false,
+  onToggleLensMode,
+  onBoxSelected,
+  onDoubleClickCreateText,
+  isAnalyzingLens = false,
 }: EditorCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -81,6 +94,22 @@ export function EditorCanvas({
 
   // Inline canvas direct text editing
   const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
+
+  // Selection Box / Magic Lens state
+  const [lensBox, setLensBox] = useState<{
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    isDrawing: boolean;
+  } | null>(null);
+
+  const [lensHover, setLensHover] = useState<{
+    canvasX: number;
+    canvasY: number;
+    screenX: number;
+    screenY: number;
+  } | null>(null);
 
   // Manual Eraser Strokes
   const [isPaintingEraser, setIsPaintingEraser] = useState(false);
@@ -218,6 +247,67 @@ export function EditorCanvas({
         }
       });
     }
+
+    // Render active Lens / Box tool selection rectangle
+    if (lensBox && lensBox.isDrawing) {
+      const lx1 = Math.min(lensBox.startX, lensBox.currentX);
+      const ly1 = Math.min(lensBox.startY, lensBox.currentY);
+      const lw = Math.abs(lensBox.currentX - lensBox.startX);
+      const lh = Math.abs(lensBox.currentY - lensBox.startY);
+
+      ctx.save();
+      // Semi-transparent overlay fill
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.18)';
+      ctx.fillRect(lx1, ly1, lw, lh);
+
+      // High-contrast animated-style border
+      ctx.strokeStyle = '#06b6d4';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(lx1, ly1, lw, lh);
+
+      // Corner target marks
+      ctx.setLineDash([]);
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 3;
+      const cLen = Math.min(12, Math.min(lw, lh) / 2);
+      // Top-Left
+      ctx.beginPath();
+      ctx.moveTo(lx1, ly1 + cLen);
+      ctx.lineTo(lx1, ly1);
+      ctx.lineTo(lx1 + cLen, ly1);
+      // Top-Right
+      ctx.moveTo(lx1 + lw - cLen, ly1);
+      ctx.lineTo(lx1 + lw, ly1);
+      ctx.lineTo(lx1 + lw, ly1 + cLen);
+      // Bottom-Left
+      ctx.moveTo(lx1, ly1 + lh - cLen);
+      ctx.lineTo(lx1, ly1 + lh);
+      ctx.lineTo(lx1 + cLen, ly1 + lh);
+      // Bottom-Right
+      ctx.moveTo(lx1 + lw - cLen, ly1 + lh);
+      ctx.lineTo(lx1 + lw, ly1 + lh);
+      ctx.lineTo(lx1 + lw, ly1 + lh - cLen);
+      ctx.stroke();
+
+      // Dimension & action tooltip
+      const badgeW = Math.max(120, lw);
+      const badgeH = 22;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+      ctx.fillRect(lx1, Math.max(0, ly1 - badgeH - 6), badgeW, badgeH);
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(lx1, Math.max(0, ly1 - badgeH - 6), badgeW, badgeH);
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.fillText(
+        `Selection: ${Math.round(lw)}×${Math.round(lh)}px`,
+        lx1 + 8,
+        Math.max(15, ly1 - 10)
+      );
+      ctx.restore();
+    }
   }, [
     layers,
     selectedLayerId,
@@ -225,6 +315,7 @@ export function EditorCanvas({
     splitView,
     splitPosition,
     showOriginalHold,
+    lensBox,
   ]);
 
   // Re-render whenever layers, selection, or image change
@@ -302,6 +393,18 @@ export function EditorCanvas({
     const img = baseImageRef.current;
     if (!img) return;
 
+    // Lens / Box selection mode: drag to select any text box
+    if (isLensMode) {
+      setLensBox({
+        startX: x,
+        startY: y,
+        currentX: x,
+        currentY: y,
+        isDrawing: true,
+      });
+      return;
+    }
+
     // Eyedropper tool click
     if (eyedropperTarget) {
       const canvas = canvasRef.current;
@@ -372,6 +475,15 @@ export function EditorCanvas({
   const handleMouseMove = (e: React.MouseEvent) => {
     const { x, y } = screenToCanvasCoords(e.clientX, e.clientY);
     const img = baseImageRef.current;
+
+    // Lens mode hover & drag
+    if (isLensMode) {
+      setLensHover({ canvasX: x, canvasY: y, screenX: e.clientX, screenY: e.clientY });
+      if (lensBox?.isDrawing) {
+        setLensBox((prev) => (prev ? { ...prev, currentX: x, currentY: y } : null));
+      }
+      return;
+    }
 
     // Eyedropper preview update
     if (eyedropperTarget && canvasRef.current) {
@@ -467,6 +579,34 @@ export function EditorCanvas({
 
   // Mouse Up
   const handleMouseUp = () => {
+    // Finish Lens box selection
+    const img = baseImageRef.current;
+    if (isLensMode && lensBox?.isDrawing && img) {
+      const lx1 = Math.min(lensBox.startX, lensBox.currentX);
+      const ly1 = Math.min(lensBox.startY, lensBox.currentY);
+      const lx2 = Math.max(lensBox.startX, lensBox.currentX);
+      const ly2 = Math.max(lensBox.startY, lensBox.currentY);
+      const lw = lx2 - lx1;
+      const lh = ly2 - ly1;
+
+      setLensBox(null);
+
+      if (lw >= 8 && lh >= 8) {
+        const box = {
+          ymin: Math.max(0, Math.round((ly1 / img.height) * 1000)),
+          xmin: Math.max(0, Math.round((lx1 / img.width) * 1000)),
+          ymax: Math.min(1000, Math.round((ly2 / img.height) * 1000)),
+          xmax: Math.min(1000, Math.round((lx2 / img.width) * 1000)),
+        };
+
+        const cropped = canvasRef.current ? cropCanvasRegion(canvasRef.current, box) : null;
+        if (onBoxSelected) {
+          onBoxSelected(box, cropped);
+        }
+      }
+      return;
+    }
+
     setIsPanning(false);
     setIsDraggingLayer(false);
     setActiveHandle(null);
@@ -535,11 +675,22 @@ export function EditorCanvas({
     if (layer) {
       onSelectLayer(layer.id);
       setInlineEditingId(layer.id);
+    } else if (canvasRef.current && baseImageRef.current) {
+      // Double clicked directly on image text outside existing layers -> Create & Edit text right here
+      const ctx = canvasRef.current.getContext('2d');
+      if (ctx) {
+        const sampledBg = samplePixelColor(ctx, Math.max(0, x - 18), Math.max(0, y - 12));
+        const sampledText = samplePixelColor(ctx, x, y);
+        if (onDoubleClickCreateText) {
+          onDoubleClickCreateText({ canvasX: x, canvasY: y }, sampledBg, sampledText);
+        }
+      }
     }
   };
 
   // Determine cursor
   const getCursor = () => {
+    if (isLensMode) return 'crosshair';
     if (isStylePickerActive) return 'crosshair';
     if (eyedropperTarget) return 'crosshair';
     if (isEraserMode) return 'cell';
@@ -682,6 +833,33 @@ export function EditorCanvas({
           <span className="text-slate-400">Original</span>
           <div className="w-3 h-0.5 bg-cyan-400" />
           <span className="text-cyan-300 font-bold">Edited (Drag divider to compare)</span>
+        </div>
+      )}
+
+      {/* Lens / Box Tool Active Notification & Guidance Banner */}
+      {isLensMode && (
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md border border-cyan-500/70 px-4 py-2 rounded-2xl text-xs font-semibold text-cyan-300 shadow-2xl shadow-cyan-950/80 flex items-center gap-3 z-30 animate-fade-in pointer-events-auto">
+          <ScanSearch className="w-4 h-4 text-cyan-400 shrink-0 animate-pulse" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-white font-bold">Box / Lens Tool:</span>
+            <span>Click & drag a box over any word or text to select & edit it!</span>
+          </div>
+          {onToggleLensMode && (
+            <button
+              onClick={onToggleLensMode}
+              className="ml-2 px-2.5 py-1 text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg border border-slate-700 transition-colors shadow-sm"
+            >
+              Exit Lens (ESC)
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Analyzing Box Indicator */}
+      {isAnalyzingLens && (
+        <div className="absolute top-16 left-1/2 transform -translate-x-1/2 bg-indigo-950/95 backdrop-blur-md border border-indigo-500/80 px-4 py-2 rounded-2xl text-xs font-semibold text-indigo-200 shadow-2xl shadow-indigo-950/80 flex items-center gap-2.5 z-30 animate-pulse pointer-events-none">
+          <Sparkles className="w-4 h-4 text-indigo-400 animate-spin" />
+          <span>Reading text & matching typography from selected box...</span>
         </div>
       )}
     </div>

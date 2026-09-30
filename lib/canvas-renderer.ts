@@ -76,8 +76,12 @@ export function inpaintRegion(
 ) {
   if (!layer.inpaintOriginal) return;
 
-  const pad = layer.inpaintPadding || 8;
-  const feather = Math.max(2, layer.inpaintFeather || 8);
+  const rawPad = typeof layer.inpaintPadding === 'number' ? layer.inpaintPadding : 2;
+  const feather = Math.max(1, typeof layer.inpaintFeather === 'number' ? layer.inpaintFeather : 3);
+
+  // Keep padding reasonable so it doesn't bleed into adjacent rows on documents/forms
+  const rawH = ((layer.box.ymax - layer.box.ymin) / 1000) * imageHeight;
+  const pad = Math.min(rawPad, Math.max(1, rawH * 0.2));
 
   const x = Math.max(0, (layer.box.xmin / 1000) * imageWidth - pad);
   const y = Math.max(0, (layer.box.ymin / 1000) * imageHeight - pad);
@@ -98,8 +102,6 @@ export function inpaintRegion(
     // 1. Sample perimeter border pixels from the main image
     let topColor = layer.backgroundColor;
     let bottomColor = layer.backgroundColor;
-    let leftColor = layer.backgroundColor;
-    let rightColor = layer.backgroundColor;
 
     try {
       // Sample edge slices
@@ -125,11 +127,11 @@ export function inpaintRegion(
     patchCtx.fillRect(0, 0, w, h);
 
     // 3. Add synthetic grain matching original texture
-    const grainStrength = Math.max(4, layer.filmGrain || 8);
+    const grainStrength = Math.max(3, layer.filmGrain || 6);
     const imgData = patchCtx.getImageData(0, 0, patchCanvas.width, patchCanvas.height);
     const data = imgData.data;
     for (let i = 0; i < data.length; i += 4) {
-      const noise = (Math.random() - 0.5) * grainStrength * 2.5;
+      const noise = (Math.random() - 0.5) * grainStrength * 2.2;
       data[i] = Math.min(255, Math.max(0, data[i] + noise));
       data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + noise));
       data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + noise));
@@ -196,10 +198,29 @@ export function drawRealisticText(
   const formattedStr = formatText(layer.currentText, layer.textTransform);
   const lines = formattedStr.split('\n');
 
-  // Compute font size
-  const calculatedFontSize = layer.fontSize > 0 
+  // Compute font size with automatic width-fitting to prevent overlapping adjacent words
+  let calculatedFontSize = layer.fontSize > 0 
     ? (layer.fontSize / 1000) * imageHeight
-    : Math.max(14, boxH * 0.72 / Math.max(1, lines.length));
+    : Math.max(8, (boxH * 0.78) / Math.max(1, lines.length));
+
+  const fontStyle = layer.fontStyle || 'normal';
+  const fontWeight = layer.fontWeight || '700';
+  const fontFamily = layer.fontFamily || 'Inter, sans-serif';
+
+  // Check if text exceeds bounding box width and auto-scale if needed
+  ctx.save();
+  ctx.font = `${fontStyle} ${fontWeight} ${calculatedFontSize}px "${fontFamily}", sans-serif`;
+  let maxMeasuredWidth = 0;
+  lines.forEach((line) => {
+    const m = ctx.measureText(line).width;
+    if (m > maxMeasuredWidth) maxMeasuredWidth = m;
+  });
+  ctx.restore();
+
+  if (maxMeasuredWidth > boxW && maxMeasuredWidth > 0 && boxW > 0) {
+    const scaleFactor = (boxW * 0.98) / maxMeasuredWidth;
+    calculatedFontSize = Math.max(7, calculatedFontSize * scaleFactor);
+  }
 
   ctx.save();
 
@@ -229,9 +250,6 @@ export function drawRealisticText(
   }
 
   // 5. Typography setup
-  const fontStyle = layer.fontStyle || 'normal';
-  const fontWeight = layer.fontWeight || '700';
-  const fontFamily = layer.fontFamily || 'Inter, sans-serif';
   ctx.font = `${fontStyle} ${fontWeight} ${calculatedFontSize}px "${fontFamily}", sans-serif`;
   ctx.textAlign = layer.textAlign || 'center';
   ctx.textBaseline = 'middle';
@@ -239,6 +257,14 @@ export function drawRealisticText(
   // Support canvas letter spacing
   if (layer.letterSpacing && 'letterSpacing' in ctx) {
     (ctx as any).letterSpacing = `${layer.letterSpacing}px`;
+  }
+
+  // Calculate text horizontal offset relative to center of box
+  let drawX = 0;
+  if (layer.textAlign === 'left') {
+    drawX = -boxW / 2;
+  } else if (layer.textAlign === 'right') {
+    drawX = boxW / 2;
   }
 
   // Calculate text vertical metrics
@@ -267,12 +293,12 @@ export function drawRealisticText(
       ctx.lineWidth = layer.outlineWidth;
       ctx.lineJoin = 'round';
       ctx.miterLimit = 2;
-      ctx.strokeText(line, 0, startY);
+      ctx.strokeText(line, drawX, startY);
     }
 
     // Text Fill
     ctx.fillStyle = layer.color || '#FFFFFF';
-    ctx.fillText(line, 0, startY);
+    ctx.fillText(line, drawX, startY);
 
     startY += lineSpacing;
   });
@@ -410,5 +436,33 @@ export function samplePixelColor(
     return hex;
   } catch {
     return '#FFFFFF';
+  }
+}
+
+/**
+ * Crops a region from canvas and returns it as a data URL for Lens OCR analysis
+ */
+export function cropCanvasRegion(
+  canvas: HTMLCanvasElement,
+  box: { ymin: number; xmin: number; ymax: number; xmax: number }
+): string | null {
+  try {
+    const x = Math.max(0, Math.floor((box.xmin / 1000) * canvas.width));
+    const y = Math.max(0, Math.floor((box.ymin / 1000) * canvas.height));
+    const w = Math.min(canvas.width - x, Math.ceil(((box.xmax - box.xmin) / 1000) * canvas.width));
+    const h = Math.min(canvas.height - y, Math.ceil(((box.ymax - box.ymin) / 1000) * canvas.height));
+
+    if (w <= 2 || h <= 2) return null;
+
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = w;
+    cropCanvas.height = h;
+    const cropCtx = cropCanvas.getContext('2d');
+    if (!cropCtx) return null;
+
+    cropCtx.drawImage(canvas, x, y, w, h, 0, 0, w, h);
+    return cropCanvas.toDataURL('image/jpeg', 0.95);
+  } catch {
+    return null;
   }
 }

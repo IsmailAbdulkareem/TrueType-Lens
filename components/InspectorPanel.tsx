@@ -18,6 +18,9 @@ import {
   Maximize2,
   ShieldAlert,
   Flame,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
 } from 'lucide-react';
 import { TextLayer } from '@/lib/canvas-renderer';
 import { TypographyStyle, extractStylesFromLayers, applyStyleToLayer, findNearestStyle } from '@/lib/style-transfer';
@@ -417,6 +420,46 @@ export function InspectorPanel({
                     <option value="normal">Normal</option>
                     <option value="italic">Italic</option>
                   </select>
+                </div>
+              </div>
+
+              {/* Text Alignment */}
+              <div>
+                <label className="text-[10px] text-slate-400 block mb-1">Text Alignment</label>
+                <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                  <button
+                    onClick={() => update({ textAlign: 'left' }, 'Set text align left')}
+                    className={`flex-1 py-1 rounded text-xs flex items-center justify-center gap-1 transition-colors ${
+                      (selectedLayer.textAlign || 'left') === 'left'
+                        ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/60'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <AlignLeft className="w-3.5 h-3.5" />
+                    <span>Left</span>
+                  </button>
+                  <button
+                    onClick={() => update({ textAlign: 'center' }, 'Set text align center')}
+                    className={`flex-1 py-1 rounded text-xs flex items-center justify-center gap-1 transition-colors ${
+                      selectedLayer.textAlign === 'center'
+                        ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/60'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <AlignCenter className="w-3.5 h-3.5" />
+                    <span>Center</span>
+                  </button>
+                  <button
+                    onClick={() => update({ textAlign: 'right' }, 'Set text align right')}
+                    className={`flex-1 py-1 rounded text-xs flex items-center justify-center gap-1 transition-colors ${
+                      selectedLayer.textAlign === 'right'
+                        ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/60'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <AlignRight className="w-3.5 h-3.5" />
+                    <span>Right</span>
+                  </button>
                 </div>
               </div>
 

@@ -34,28 +34,40 @@ export async function POST(req: NextRequest) {
     const cleanBase64 = imageBase64.replace(/^data:image\/[a-z]+;base64,/, "");
 
     const prompt = `Analyze this image with high typographic precision for an image text replacement and editing tool.
-Identify all readable text elements that can be edited or replaced.
+Identify ALL readable text elements that can be edited or replaced (titles, names, numbers, values, labels, dates, marks, headings, stamps, table cells).
 
-For each text element detected, accurately determine:
+CRITICAL RULES FOR DOCUMENTS, CERTIFICATES, MARKS SHEETS, AND FORMS:
+1. DO NOT MISS ANY WORDS OR NUMBERS: Scan the image thoroughly from top to bottom, row by row. Include every field, name, number, score, date, and title.
+2. DO NOT MERGE DISTINCT FIELDS: Keep labels and their values separated (e.g. 'NAME:' as one box, and the person's name as its own separate box; 'ROLL NUMBER:' and the number as separate boxes; 'DATE OF BIRTH:' and date as separate boxes).
+3. TIGHT NON-OVERLAPPING BOUNDING BOXES: Each box [ymin, xmin, ymax, xmax] must tightly wrap the exact printed characters with NO overlap onto neighboring lines or columns.
+   - ymin is the top edge (0-1000)
+   - xmin is the left edge (0-1000)
+   - ymax is the bottom edge (0-1000)
+   - xmax is the right edge (0-1000)
+4. For tables (marks sheets, receipts, grade tables): identify every cell value (numbers, grades, subject names).
+5. Accurate baseline alignment: Bounding boxes must precisely match where the text is printed on the physical image.
+
+For each text element detected, determine:
 1. "text": The exact text currently written in the image.
-2. "box_2d": The bounding box coordinates [ymin, xmin, ymax, xmax] normalized to a 0-1000 integer scale.
+2. "box_2d": The tight bounding box coordinates [ymin, xmin, ymax, xmax] normalized to a 0-1000 integer scale.
 3. "fontFamily": The closest matching web font family from this list:
    ['Inter', 'Montserrat', 'Oswald', 'Playfair Display', 'Cinzel', 'Courier Prime', 'Space Grotesk', 'Rubik', 'Caveat', 'Impact', 'Arial', 'Georgia'].
 4. "fontWeight": Font weight as a string ('300', '400', '600', '700', '800', '900').
 5. "fontStyle": 'normal' or 'italic'.
-6. "color": Dominant hex color code of the text glyphs (e.g. #FFFFFF, #E63946, #1A1A1A). Be extremely precise to match the actual visual color with lighting.
-7. "outlineColor": Hex color if the text has an outline, stroke, or border, else null or empty.
-8. "outlineWidth": Estimated outline width in pixels (0 if no outline).
-9. "shadowColor": Hex color if there is a noticeable shadow, else null.
-10. "shadowBlur": Drop shadow blur radius in px (0 if sharp/none).
-11. "backgroundColor": Dominant hex color of the background immediately behind/around the letters (used for seamless background inpainting patch).
-12. "backgroundTexture": One of 'solid', 'gradient', 'paper', 'wood', 'chalkboard', 'fabric', 'concrete', 'photo'.
-13. "rotationAngle": Rotation angle in degrees (clockwise positive, counter-clockwise negative, usually -45 to 45).
-14. "blendMode": Best blend mode for realism: 'source-over' (default), 'multiply' (for ink on paper/t-shirt), 'screen' (for neon/glowing signs), 'overlay' (for metallic/textured).
-15. "cameraBlur": Lens blur / edge softness in px (0 to 4).
-16. "filmGrain": Sensor noise / grain level (0 to 30) to blend with the original photo.
-17. "perspectiveSkewX": Approximate horizontal perspective slant (-30 to 30 degrees, 0 if flat).
-18. "letterSpacing": Approximate letter spacing in pixels (-2 to 10).`;
+6. "textAlign": 'left' for left-aligned body text and forms, 'center' for centered titles or numbers.
+7. "color": Dominant hex color code of the text glyphs (e.g. #1E293B, #0F172A, #000000, #E63946). Match the exact ink/print color.
+8. "outlineColor": Hex color if the text has an outline or stroke, else null.
+9. "outlineWidth": Estimated outline width in pixels (0 if no outline).
+10. "shadowColor": Hex color if there is a noticeable shadow, else null.
+11. "shadowBlur": Drop shadow blur radius in px (0 if sharp/none).
+12. "backgroundColor": Dominant hex color of the background/paper immediately behind/around the letters (used for seamless background inpainting patch).
+13. "backgroundTexture": One of 'paper', 'solid', 'gradient', 'wood', 'chalkboard', 'fabric', 'concrete', 'photo'.
+14. "rotationAngle": Rotation angle in degrees (clockwise positive, counter-clockwise negative, usually -5 to 5 for scanned documents).
+15. "blendMode": Best blend mode: 'multiply' for documents/ink on paper, 'source-over' for opaque decals, 'screen' for neon signs.
+16. "cameraBlur": Lens blur / edge softness in px (0.2 to 1.5 for scanned paper).
+17. "filmGrain": Sensor noise / paper grain level (4 to 20).
+18. "perspectiveSkewX": Approximate horizontal perspective slant (-30 to 30 degrees, 0 if flat).
+19. "letterSpacing": Approximate letter spacing in pixels (-2 to 6).`;
 
     let lastError: any = null;
 
@@ -95,6 +107,7 @@ For each text element detected, accurately determine:
                       fontFamily: { type: Type.STRING },
                       fontWeight: { type: Type.STRING },
                       fontStyle: { type: Type.STRING },
+                      textAlign: { type: Type.STRING },
                       color: { type: Type.STRING },
                       outlineColor: { type: Type.STRING },
                       outlineWidth: { type: Type.NUMBER },

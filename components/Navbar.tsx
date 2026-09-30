@@ -13,6 +13,7 @@ import {
   Copy,
   Layers,
   Wand2,
+  ScanSearch,
   Image as ImageIcon,
 } from 'lucide-react';
 import { SAMPLE_IMAGES, SampleImage } from '@/lib/sample-images';
@@ -33,6 +34,8 @@ interface NavbarProps {
   canUndo: boolean;
   canRedo: boolean;
   historyAction?: string;
+  isLensMode?: boolean;
+  onToggleLensMode?: () => void;
 }
 
 export function Navbar({
@@ -51,6 +54,8 @@ export function Navbar({
   canUndo,
   canRedo,
   historyAction,
+  isLensMode = false,
+  onToggleLensMode,
 }: NavbarProps) {
   return (
     <header className="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-4 flex items-center justify-between z-30 sticky top-0">
@@ -149,6 +154,22 @@ export function Navbar({
           </button>
         )}
 
+        {/* Box / Lens Selector Tool */}
+        {hasImage && onToggleLensMode && (
+          <button
+            onClick={onToggleLensMode}
+            title="Select Text with Lens or Box (Shortcut: B)"
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all border ${
+              isLensMode
+                ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold shadow-md shadow-cyan-500/40 ring-2 ring-cyan-400/50'
+                : 'bg-slate-800/90 border-cyan-800/80 text-cyan-300 hover:bg-cyan-950/60 hover:border-cyan-600'
+            }`}
+          >
+            <ScanSearch className="w-3.5 h-3.5" />
+            <span>{isLensMode ? 'Lens Active' : 'Lens / Box Tool'}</span>
+          </button>
+        )}
+
         {/* Scan with AI */}
         {hasImage && (
           <button
@@ -161,7 +182,7 @@ export function Navbar({
             }`}
           >
             <Sparkles className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
-            <span>{isScanning ? 'Scanning...' : 'Scan Text with AI'}</span>
+            <span>{isScanning ? 'Scanning...' : 'Scan All with AI'}</span>
           </button>
         )}
 

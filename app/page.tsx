@@ -86,6 +86,8 @@ export default function HomePage() {
   const [isEraserMode, setIsEraserMode] = useState<boolean>(false);
   const [eraserSize, setEraserSize] = useState<number>(20);
   const [isStylePickerActive, setIsStylePickerActive] = useState<boolean>(false);
+  const [isLensMode, setIsLensMode] = useState<boolean>(false);
+  const [isAnalyzingLens, setIsAnalyzingLens] = useState<boolean>(false);
 
   // AI Operation States
   const [isScanning, setIsScanning] = useState<boolean>(false);
@@ -103,6 +105,20 @@ export default function HomePage() {
     setToastMessage({ text, type });
     setTimeout(() => setToastMessage(null), 3500);
   }, []);
+
+  // Toggle Lens / Box Tool Mode
+  const handleToggleLensMode = useCallback(() => {
+    setIsLensMode((prev) => {
+      const next = !prev;
+      if (next) {
+        setEyedropperTarget(null);
+        setIsEraserMode(false);
+        setIsStylePickerActive(false);
+        showToast('Lens / Box Tool Active: Click and drag a box over any text to select & edit it!', 'info');
+      }
+      return next;
+    });
+  }, [showToast]);
 
   // Convert Sample to Canvas Layers
   const loadSample = useCallback(
@@ -277,10 +293,14 @@ export default function HomePage() {
         }
       } else if (e.code === 'Space' && !e.repeat && !isInput) {
         setShowOriginalHold(true);
+      } else if ((e.key === 'b' || e.key === 'l' || e.key === 'B' || e.key === 'L') && !isInput && !(e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleToggleLensMode();
       } else if (e.key === 'Escape') {
         setEyedropperTarget(null);
         setIsEraserMode(false);
         setIsStylePickerActive(false);
+        setIsLensMode(false);
       }
     };
 
@@ -296,7 +316,7 @@ export default function HomePage() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [selectedLayerId, handleUndo, handleRedo, deleteLayer]);
+  }, [selectedLayerId, handleUndo, handleRedo, deleteLayer, handleToggleLensMode]);
 
   // AI Scan with Gemini
   const handleScanWithAi = async () => {
@@ -357,9 +377,9 @@ export default function HomePage() {
           fontSize: 0,
           fontWeight: elem.fontWeight || '700',
           fontStyle: elem.fontStyle || 'normal',
-          textAlign: 'center',
+          textAlign: (elem.textAlign as 'left' | 'center' | 'right') || 'left',
           textTransform: 'none',
-          letterSpacing: elem.letterSpacing ?? 2,
+          letterSpacing: elem.letterSpacing ?? 1,
           lineHeight: 1.15,
           color: elem.color || '#FFFFFF',
           opacity: 1,
@@ -372,14 +392,14 @@ export default function HomePage() {
           shadowOffsetX: 2,
           shadowOffsetY: 2,
           blendMode: (elem.blendMode as GlobalCompositeOperation) || 'source-over',
-          cameraBlur: elem.cameraBlur ?? 0.5,
-          filmGrain: elem.filmGrain ?? 10,
+          cameraBlur: elem.cameraBlur ?? 0.4,
+          filmGrain: elem.filmGrain ?? 8,
           rotationAngle: elem.rotationAngle || 0,
           perspectiveSkewX: elem.perspectiveSkewX || 0,
           perspectiveSkewY: 0,
           inpaintOriginal: true,
-          inpaintPadding: 10,
-          inpaintFeather: 8,
+          inpaintPadding: 2,
+          inpaintFeather: 3,
           backgroundColor: elem.backgroundColor || '#202020',
           visible: true,
         };
@@ -391,11 +411,172 @@ export default function HomePage() {
       showToast(`Detected ${newLayers.length} text elements with matched typography!`, 'success');
     } catch (err: any) {
       console.warn('Scan warning:', err);
-      showToast('AI service is temporarily busy. Added a text box for you to edit now!', 'info');
+      showToast('AI service is temporarily busy. Use the Lens / Box tool or double-click any word!', 'info');
       addLayer();
     } finally {
       setIsScanning(false);
     }
+  };
+
+  // Handle Box Selected via Magic Lens
+  const handleBoxSelected = async (
+    box: { ymin: number; xmin: number; ymax: number; xmax: number },
+    croppedBase64: string | null
+  ) => {
+    const newId = `lens-text-${Date.now()}`;
+    const detected = extractStylesFromLayers(layers);
+    const baseStyle = detected[0] || null;
+
+    const newLayer: TextLayer = {
+      id: newId,
+      originalText: 'EDIT TEXT',
+      currentText: 'EDIT TEXT',
+      box,
+      fontFamily: baseStyle?.fontFamily || 'Montserrat',
+      fontSize: 0,
+      fontWeight: baseStyle?.fontWeight || '700',
+      fontStyle: baseStyle?.fontStyle || 'normal',
+      textAlign: 'left',
+      textTransform: 'none',
+      letterSpacing: baseStyle?.letterSpacing ?? 1,
+      lineHeight: 1.15,
+      color: baseStyle?.color || '#0F172A',
+      opacity: 1,
+      hasOutline: false,
+      outlineColor: '#000000',
+      outlineWidth: 0,
+      hasShadow: false,
+      shadowColor: 'transparent',
+      shadowBlur: 0,
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      blendMode: 'source-over',
+      cameraBlur: 0.3,
+      filmGrain: 8,
+      rotationAngle: 0,
+      perspectiveSkewX: 0,
+      perspectiveSkewY: 0,
+      inpaintOriginal: true,
+      inpaintPadding: 2,
+      inpaintFeather: 3,
+      backgroundColor: baseStyle?.backgroundColor || '#FFFFFF',
+      visible: true,
+    };
+
+    setLayers((prev) => {
+      const next = [...prev, newLayer];
+      pushState(next, 'Added text with Lens selection');
+      return next;
+    });
+    setSelectedLayerId(newId);
+    setIsLensMode(false);
+    showToast('Box locked! Double-click canvas or edit replacement text in inspector.', 'success');
+
+    // Run AI recognition on the cropped box in the background
+    if (croppedBase64) {
+      setIsAnalyzingLens(true);
+      try {
+        const res = await fetch('/api/recognize-box', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ croppedBase64 }),
+        });
+        const data = await res.json();
+        if (data?.text && data.text !== 'EDIT THIS TEXT') {
+          setLayers((prev) =>
+            prev.map((l) =>
+              l.id === newId
+                ? {
+                    ...l,
+                    originalText: data.text,
+                    currentText: data.text,
+                    fontFamily: data.fontFamily || l.fontFamily,
+                    fontWeight: data.fontWeight || l.fontWeight,
+                    fontStyle: data.fontStyle || l.fontStyle,
+                    color: data.color || l.color,
+                    backgroundColor: data.backgroundColor || l.backgroundColor,
+                    textAlign: (data.textAlign as 'left' | 'center' | 'right') || l.textAlign,
+                    hasOutline: !!data.hasOutline,
+                    outlineColor: data.outlineColor || l.outlineColor,
+                    outlineWidth: data.outlineWidth ?? l.outlineWidth,
+                    hasShadow: !!data.hasShadow,
+                    shadowColor: data.shadowColor || l.shadowColor,
+                  }
+                : l
+            )
+          );
+          showToast(`Recognized text: "${data.text}" with matched font!`, 'success');
+        }
+      } catch (err) {
+        console.warn('Box recognition fallback:', err);
+      } finally {
+        setIsAnalyzingLens(false);
+      }
+    }
+  };
+
+  // Handle Double-Click Anywhere on Image to Create & Edit Text
+  const handleDoubleClickCreateText = (
+    coords: { canvasX: number; canvasY: number },
+    sampledBg: string,
+    sampledText: string
+  ) => {
+    const boxHalfW = 75;
+    const boxHalfH = 18;
+
+    // Use current canvas image dimensions estimate or fallback to 1000 scale
+    const ymin = Math.max(0, Math.round(((coords.canvasY - boxHalfH) / 800) * 1000));
+    const xmin = Math.max(0, Math.round(((coords.canvasX - boxHalfW) / 1000) * 1000));
+    const ymax = Math.min(1000, Math.round(((coords.canvasY + boxHalfH) / 800) * 1000));
+    const xmax = Math.min(1000, Math.round(((coords.canvasX + boxHalfW) / 1000) * 1000));
+
+    const detected = extractStylesFromLayers(layers);
+    const baseStyle = detected[0] || null;
+
+    const newId = `direct-click-${Date.now()}`;
+    const newLayer: TextLayer = {
+      id: newId,
+      originalText: '',
+      currentText: 'NEW TEXT',
+      box: { ymin, xmin, ymax, xmax },
+      fontFamily: baseStyle?.fontFamily || 'Montserrat',
+      fontSize: 0,
+      fontWeight: baseStyle?.fontWeight || '700',
+      fontStyle: baseStyle?.fontStyle || 'normal',
+      textAlign: 'left',
+      textTransform: 'none',
+      letterSpacing: baseStyle?.letterSpacing ?? 1,
+      lineHeight: 1.15,
+      color: sampledText || baseStyle?.color || '#000000',
+      opacity: 1,
+      hasOutline: false,
+      outlineColor: '#000000',
+      outlineWidth: 0,
+      hasShadow: false,
+      shadowColor: 'transparent',
+      shadowBlur: 0,
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      blendMode: 'source-over',
+      cameraBlur: 0.3,
+      filmGrain: 8,
+      rotationAngle: 0,
+      perspectiveSkewX: 0,
+      perspectiveSkewY: 0,
+      inpaintOriginal: true,
+      inpaintPadding: 2,
+      inpaintFeather: 3,
+      backgroundColor: sampledBg || '#FFFFFF',
+      visible: true,
+    };
+
+    setLayers((prev) => {
+      const next = [...prev, newLayer];
+      pushState(next, 'Double-click created text');
+      return next;
+    });
+    setSelectedLayerId(newId);
+    showToast('Editing text at clicked location. Type your new text!', 'info');
   };
 
   // AI Generative Neural Inpaint (fallback / full synthesis)
@@ -641,6 +822,8 @@ export default function HomePage() {
         canUndo={canUndo}
         canRedo={canRedo}
         historyAction={currentAction}
+        isLensMode={isLensMode}
+        onToggleLensMode={handleToggleLensMode}
       />
 
       {/* Toast Notification Banner */}
@@ -682,6 +865,8 @@ export default function HomePage() {
           showOriginalHold={showOriginalHold}
           onScanWithAi={handleScanWithAi}
           isScanning={isScanning}
+          isLensMode={isLensMode}
+          onToggleLensMode={handleToggleLensMode}
         />
 
         {/* Center Canvas Viewport */}
@@ -701,6 +886,11 @@ export default function HomePage() {
           showOriginalHold={showOriginalHold}
           isStylePickerActive={isStylePickerActive}
           onPickStyleFromLayer={handlePickStyleFromLayer}
+          isLensMode={isLensMode}
+          onToggleLensMode={handleToggleLensMode}
+          onBoxSelected={handleBoxSelected}
+          onDoubleClickCreateText={handleDoubleClickCreateText}
+          isAnalyzingLens={isAnalyzingLens}
         />
 
         {/* Right Inspector & Photorealism Panel */}

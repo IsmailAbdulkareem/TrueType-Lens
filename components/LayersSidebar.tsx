@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   MousePointer,
   Wand2,
+  ScanSearch,
 } from 'lucide-react';
 import { TextLayer } from '@/lib/canvas-renderer';
 import { TypographyStyle, extractStylesFromLayers } from '@/lib/style-transfer';
@@ -36,6 +37,8 @@ interface LayersSidebarProps {
   showOriginalHold: boolean;
   onScanWithAi: () => void;
   isScanning: boolean;
+  isLensMode?: boolean;
+  onToggleLensMode?: () => void;
 }
 
 export function LayersSidebar({
@@ -56,6 +59,8 @@ export function LayersSidebar({
   showOriginalHold,
   onScanWithAi,
   isScanning,
+  isLensMode = false,
+  onToggleLensMode,
 }: LayersSidebarProps) {
   const detectedStyles = extractStylesFromLayers(layers);
 
@@ -67,11 +72,26 @@ export function LayersSidebar({
           {/* Add Layer Button */}
           <button
             onClick={() => onAddLayer()}
-            className="flex-1 py-1.5 px-3 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm shadow-cyan-500/20 transition-all active:scale-95"
+            className="flex-1 py-1.5 px-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm shadow-cyan-500/20 transition-all active:scale-95"
           >
             <Plus className="w-3.5 h-3.5 stroke-[3]" />
             <span>Add Text</span>
           </button>
+
+          {/* Box / Lens Selector Tool Button */}
+          {onToggleLensMode && (
+            <button
+              onClick={onToggleLensMode}
+              title="Select Text with Box / Lens (Drag box over any text)"
+              className={`p-2 rounded-lg border transition-colors ${
+                isLensMode
+                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 ring-2 ring-cyan-400/40'
+                  : 'bg-slate-800 text-cyan-300 hover:text-white border-slate-700'
+              }`}
+            >
+              <ScanSearch className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           {/* Quick Eyedropper Button */}
           <button
@@ -163,16 +183,32 @@ export function LayersSidebar({
       {/* Layers List */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {layers.length === 0 ? (
-          <div className="p-6 text-center text-slate-500 space-y-3">
-            <Layers className="w-8 h-8 mx-auto opacity-40" />
-            <p className="text-xs">No text layers yet</p>
+          <div className="p-4 text-center text-slate-500 space-y-2.5">
+            <Layers className="w-7 h-7 mx-auto opacity-40 text-slate-400" />
+            <div>
+              <p className="text-xs font-semibold text-slate-300">No text layers yet</p>
+              <p className="text-[10px] text-slate-500 mt-0.5">
+                Double-click ANY text on the image or use the tools below:
+              </p>
+            </div>
+
+            {onToggleLensMode && (
+              <button
+                onClick={onToggleLensMode}
+                className="w-full py-2 px-3 rounded-lg bg-cyan-950/60 hover:bg-cyan-900/60 text-cyan-300 border border-cyan-700/60 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
+              >
+                <ScanSearch className="w-3.5 h-3.5" />
+                <span>Select Text with Box / Lens</span>
+              </button>
+            )}
+
             <button
               onClick={onScanWithAi}
               disabled={isScanning}
-              className="w-full py-2 px-3 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 text-xs font-semibold flex items-center justify-center gap-1.5"
+              className="w-full py-2 px-3 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all"
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Auto-Detect Text</span>
+              <span>Scan All with AI</span>
             </button>
           </div>
         ) : (
