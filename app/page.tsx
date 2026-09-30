@@ -10,7 +10,8 @@ import { SAMPLE_IMAGES, SampleImage } from '@/lib/sample-images';
 import { TextLayer } from '@/lib/canvas-renderer';
 import { TypographyStyle, extractStylesFromLayers, applyStyleToLayer } from '@/lib/style-transfer';
 import { useHistory } from '@/hooks/use-history';
-import { Upload, Sparkles, Image as ImageIcon, AlertCircle } from 'lucide-react';
+import { ChatBotPanel } from '@/components/ChatBotPanel';
+import { Upload, Sparkles, Image as ImageIcon, AlertCircle, Bot } from 'lucide-react';
 
 export default function HomePage() {
   // Main Image state - Default to first high-res sample
@@ -88,6 +89,7 @@ export default function HomePage() {
   const [isStylePickerActive, setIsStylePickerActive] = useState<boolean>(false);
   const [isLensMode, setIsLensMode] = useState<boolean>(false);
   const [isAnalyzingLens, setIsAnalyzingLens] = useState<boolean>(false);
+  const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
 
   // AI Operation States
   const [isScanning, setIsScanning] = useState<boolean>(false);
@@ -579,52 +581,199 @@ export default function HomePage() {
     showToast('Editing text at clicked location. Type your new text!', 'info');
   };
 
+  // Update layer with undo/redo recording
+  const updateLayer = useCallback(
+    (updated: TextLayer, actionLabel: string = 'Updated layer') => {
+      setLayers((prev) => {
+        const nextLayers = prev.map((l) => (l.id === updated.id ? updated : l));
+        const isDebounced =
+          actionLabel.includes('text') ||
+          actionLabel.includes('Typed') ||
+          actionLabel.includes('size') ||
+          actionLabel.includes('Padding');
+
+        pushState(nextLayers, actionLabel, isDebounced ? 250 : 0);
+        return nextLayers;
+      });
+    },
+    [pushState]
+  );
+
   // AI Generative Neural Inpaint (fallback / full synthesis)
-  const handleTriggerAiInpaint = async (instructions: string) => {
-    const layer = layers.find((l) => l.id === selectedLayerId);
-    if (!layer || !imageSrc) return;
+  const handleTriggerAiInpaint = useCallback(
+    async (instructions: string) => {
+      const layer = layers.find((l) => l.id === selectedLayerId);
+      if (!layer || !imageSrc) return;
 
-    setIsAiInpainting(true);
-    showToast('Synthesizing photorealistic edit with Gemini...', 'info');
+      setIsAiInpainting(true);
+      showToast('Synthesizing photorealistic edit with Gemini...', 'info');
 
-    try {
-      const response = await fetch('/api/inpaint-text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: imageSrc,
-          originalText: layer.originalText,
-          newText: layer.currentText,
-          instructions,
-        }),
+      try {
+        const response = await fetch('/api/inpaint-text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageBase64: imageSrc,
+            originalText: layer.originalText,
+            newText: layer.currentText,
+            instructions,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.imageUrl) {
+          throw new Error(data.error || 'Generative inpaint could not complete.');
+        }
+
+        // Update image with the generated image
+        setImageSrc(data.imageUrl);
+        // Mark layer as healed so canvas doesn't double-render
+        updateLayer(
+          {
+            ...layer,
+            inpaintOriginal: false,
+          },
+          'Applied AI Neural Inpaint'
+        );
+        showToast('AI Neural Replacement generated successfully!', 'success');
+      } catch (err: any) {
+        console.error('AI inpaint error:', err);
+        showToast(
+          `${err.message || 'Generative inpaint failed'}. Our pixel-perfect Canvas Engine is actively rendering your edit with matched font & grain.`,
+          'info'
+        );
+      } finally {
+        setIsAiInpainting(false);
+      }
+    },
+    [layers, selectedLayerId, imageSrc, showToast, updateLayer]
+  );
+
+  // Handle operations returned by the AI Chatbot Copilot
+  const handleApplyChatOperations = useCallback(
+    (operations: any[], explanation: string) => {
+      setLayers((prev) => {
+        let current = [...prev];
+
+        for (const op of operations) {
+          if (op.type === 'update') {
+            // Find layer by ID or matching currentText / originalText
+            const targetIndex = current.findIndex(
+              (l) =>
+                l.id === op.targetLayerId ||
+                l.currentText.toLowerCase() === op.targetLayerId?.toLowerCase() ||
+                (op.updates?.currentText && l.currentText.toLowerCase().includes(op.updates.currentText.toLowerCase()))
+            );
+
+            if (targetIndex !== -1) {
+              const target = current[targetIndex];
+              current[targetIndex] = {
+                ...target,
+                ...(op.updates || {}),
+                inpaintOriginal: true,
+                inpaintPadding: 2,
+                inpaintFeather: 3,
+              };
+              setSelectedLayerId(current[targetIndex].id);
+            } else if (op.updates) {
+              // If not found in existing layers, create it!
+              const newId = `chat-text-${Date.now()}`;
+              current.push({
+                id: newId,
+                originalText: op.updates.currentText || 'TEXT',
+                currentText: op.updates.currentText || 'TEXT',
+                box: { ymin: 420, xmin: 250, ymax: 500, xmax: 750 },
+                fontFamily: op.updates.fontFamily || 'Montserrat',
+                fontSize: 0,
+                fontWeight: op.updates.fontWeight || '700',
+                fontStyle: op.updates.fontStyle || 'normal',
+                textAlign: (op.updates.textAlign as 'left' | 'center' | 'right') || 'center',
+                textTransform: 'none',
+                letterSpacing: op.updates.letterSpacing ?? 1,
+                lineHeight: 1.15,
+                color: op.updates.color || '#000000',
+                opacity: 1,
+                hasOutline: false,
+                outlineColor: '#000000',
+                outlineWidth: 0,
+                hasShadow: false,
+                shadowColor: 'transparent',
+                shadowBlur: 0,
+                shadowOffsetX: 0,
+                shadowOffsetY: 0,
+                blendMode: 'source-over',
+                cameraBlur: 0.3,
+                filmGrain: 8,
+                rotationAngle: 0,
+                perspectiveSkewX: 0,
+                perspectiveSkewY: 0,
+                inpaintOriginal: true,
+                inpaintPadding: 2,
+                inpaintFeather: 3,
+                backgroundColor: op.updates.backgroundColor || '#FFFFFF',
+                visible: true,
+              });
+              setSelectedLayerId(newId);
+            }
+          } else if (op.type === 'create' && op.newLayer) {
+            const b = op.newLayer.box_2d || [420, 250, 500, 750];
+            const newId = `chat-created-${Date.now()}`;
+            current.push({
+              id: newId,
+              originalText: op.newLayer.text || 'NEW TEXT',
+              currentText: op.newLayer.text || 'NEW TEXT',
+              box: {
+                ymin: Math.max(0, Math.min(950, b[0])),
+                xmin: Math.max(0, Math.min(950, b[1])),
+                ymax: Math.max(50, Math.min(1000, b[2])),
+                xmax: Math.max(50, Math.min(1000, b[3])),
+              },
+              fontFamily: op.newLayer.fontFamily || 'Montserrat',
+              fontSize: 0,
+              fontWeight: op.newLayer.fontWeight || '700',
+              fontStyle: op.newLayer.fontStyle || 'normal',
+              textAlign: (op.newLayer.textAlign as 'left' | 'center' | 'right') || 'left',
+              textTransform: 'none',
+              letterSpacing: 1,
+              lineHeight: 1.15,
+              color: op.newLayer.color || '#000000',
+              opacity: 1,
+              hasOutline: false,
+              outlineColor: '#000000',
+              outlineWidth: 0,
+              hasShadow: false,
+              shadowColor: 'transparent',
+              shadowBlur: 0,
+              shadowOffsetX: 0,
+              shadowOffsetY: 0,
+              blendMode: 'source-over',
+              cameraBlur: 0.3,
+              filmGrain: 8,
+              rotationAngle: 0,
+              perspectiveSkewX: 0,
+              perspectiveSkewY: 0,
+              inpaintOriginal: true,
+              inpaintPadding: 2,
+              inpaintFeather: 3,
+              backgroundColor: op.newLayer.backgroundColor || '#FFFFFF',
+              visible: true,
+            });
+            setSelectedLayerId(newId);
+          } else if (op.type === 'delete' && op.targetLayerId) {
+            current = current.filter((l) => l.id !== op.targetLayerId);
+          } else if (op.type === 'generative_inpaint' && op.generativePrompt) {
+            handleTriggerAiInpaint(op.generativePrompt);
+          }
+        }
+
+        pushState(current, `AI Chatbot: ${explanation}`);
+        return current;
       });
 
-      const data = await response.json();
-      if (!response.ok || !data.imageUrl) {
-        throw new Error(data.error || 'Generative inpaint could not complete.');
-      }
-
-      // Update image with the generated image
-      setImageSrc(data.imageUrl);
-      // Mark layer as healed so canvas doesn't double-render
-      updateLayer(
-        {
-          ...layer,
-          inpaintOriginal: false,
-        },
-        'Applied AI Neural Inpaint'
-      );
-      showToast('AI Neural Replacement generated successfully!', 'success');
-    } catch (err: any) {
-      console.error('AI inpaint error:', err);
-      showToast(
-        `${err.message || 'Generative inpaint failed'}. Our pixel-perfect Canvas Engine is actively rendering your edit with matched font & grain.`,
-        'info'
-      );
-    } finally {
-      setIsAiInpainting(false);
-    }
-  };
+      showToast(`AI Chatbot: ${explanation}`, 'success');
+    },
+    [pushState, showToast, handleTriggerAiInpaint]
+  );
 
   // Add new layer with optional matching typography style
   const addLayer = (presetStyle?: TypographyStyle) => {
@@ -703,21 +852,6 @@ export default function HomePage() {
     setLayers(nextLayers);
     setSelectedLayerId(dupId);
     pushState(nextLayers, 'Duplicated layer');
-  };
-
-  // Update layer with undo/redo recording
-  const updateLayer = (updated: TextLayer, actionLabel: string = 'Updated layer') => {
-    const nextLayers = layers.map((l) => (l.id === updated.id ? updated : l));
-    setLayers(nextLayers);
-
-    // Debounce for live typing or drag sliders
-    const isDebounced =
-      actionLabel.includes('text') ||
-      actionLabel.includes('Typed') ||
-      actionLabel.includes('size') ||
-      actionLabel.includes('Padding');
-
-    pushState(nextLayers, actionLabel, isDebounced ? 250 : 0);
   };
 
   // Toggle visibility
@@ -824,6 +958,8 @@ export default function HomePage() {
         historyAction={currentAction}
         isLensMode={isLensMode}
         onToggleLensMode={handleToggleLensMode}
+        isChatOpen={isChatOpen}
+        onToggleChat={() => setIsChatOpen((c) => !c)}
       />
 
       {/* Toast Notification Banner */}
@@ -867,6 +1003,8 @@ export default function HomePage() {
           isScanning={isScanning}
           isLensMode={isLensMode}
           onToggleLensMode={handleToggleLensMode}
+          isChatOpen={isChatOpen}
+          onToggleChat={() => setIsChatOpen((c) => !c)}
         />
 
         {/* Center Canvas Viewport */}
@@ -908,6 +1046,29 @@ export default function HomePage() {
           isStylePickerActive={isStylePickerActive}
         />
       </main>
+
+      {/* Floating Quick AI Chatbot Launcher (if closed) */}
+      {!isChatOpen && (
+        <button
+          onClick={() => setIsChatOpen(true)}
+          className="fixed bottom-5 right-5 z-30 px-4 py-2.5 rounded-full bg-gradient-to-r from-cyan-500 via-indigo-600 to-purple-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold text-xs shadow-2xl shadow-cyan-500/40 border border-cyan-400/50 flex items-center gap-2 transition-all hover:scale-105 active:scale-95"
+          title="Open AI Chatbot: Tell what to change on the image"
+        >
+          <Bot className="w-4 h-4 text-white" />
+          <span>Ask AI Chatbot to Edit</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+        </button>
+      )}
+
+      {/* AI Chatbot Assistant Drawer */}
+      <ChatBotPanel
+        isOpen={isChatOpen}
+        onClose={() => setIsChatOpen(false)}
+        layers={layers}
+        imageSrc={imageSrc}
+        onApplyOperations={handleApplyChatOperations}
+        onUndoLastAction={handleUndo}
+      />
 
       {/* Full-Res Export Modal */}
       <ExportModal

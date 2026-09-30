@@ -14,6 +14,7 @@ import {
   Layers,
   Wand2,
   ScanSearch,
+  Bot,
   Image as ImageIcon,
 } from 'lucide-react';
 import { SAMPLE_IMAGES, SampleImage } from '@/lib/sample-images';
@@ -36,6 +37,8 @@ interface NavbarProps {
   historyAction?: string;
   isLensMode?: boolean;
   onToggleLensMode?: () => void;
+  isChatOpen?: boolean;
+  onToggleChat?: () => void;
 }
 
 export function Navbar({
@@ -56,6 +59,8 @@ export function Navbar({
   historyAction,
   isLensMode = false,
   onToggleLensMode,
+  isChatOpen = false,
+  onToggleChat,
 }: NavbarProps) {
   return (
     <header className="h-16 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-4 flex items-center justify-between z-30 sticky top-0">
@@ -183,6 +188,23 @@ export function Navbar({
           >
             <Sparkles className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
             <span>{isScanning ? 'Scanning...' : 'Scan All with AI'}</span>
+          </button>
+        )}
+
+        {/* AI Edit Chatbot Copilot */}
+        {hasImage && onToggleChat && (
+          <button
+            onClick={onToggleChat}
+            title="Open AI Chatbot: Describe what to change on the image"
+            className={`px-3.5 py-1.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all border shadow-sm ${
+              isChatOpen
+                ? 'bg-gradient-to-r from-cyan-500 to-indigo-600 text-white border-cyan-400 shadow-cyan-500/30 ring-2 ring-cyan-400/40'
+                : 'bg-indigo-950/80 border-indigo-700/80 text-indigo-200 hover:bg-indigo-900/90 hover:text-white'
+            }`}
+          >
+            <Bot className="w-3.5 h-3.5 text-cyan-400" />
+            <span>AI Chatbot</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           </button>
         )}
 

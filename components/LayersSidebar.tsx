@@ -15,6 +15,7 @@ import {
   MousePointer,
   Wand2,
   ScanSearch,
+  Bot,
 } from 'lucide-react';
 import { TextLayer } from '@/lib/canvas-renderer';
 import { TypographyStyle, extractStylesFromLayers } from '@/lib/style-transfer';
@@ -39,6 +40,8 @@ interface LayersSidebarProps {
   isScanning: boolean;
   isLensMode?: boolean;
   onToggleLensMode?: () => void;
+  isChatOpen?: boolean;
+  onToggleChat?: () => void;
 }
 
 export function LayersSidebar({
@@ -61,6 +64,8 @@ export function LayersSidebar({
   isScanning,
   isLensMode = false,
   onToggleLensMode,
+  isChatOpen = false,
+  onToggleChat,
 }: LayersSidebarProps) {
   const detectedStyles = extractStylesFromLayers(layers);
 
@@ -170,6 +175,26 @@ export function LayersSidebar({
           <Eye className="w-3.5 h-3.5" />
           <span>{showOriginalHold ? 'Showing Original...' : 'Hold to View Original'}</span>
         </button>
+
+        {/* AI Chatbot Copilot Prompt Trigger */}
+        {onToggleChat && (
+          <button
+            onClick={onToggleChat}
+            className={`w-full py-2 px-3 rounded-xl text-xs font-bold border flex items-center justify-between transition-all shadow-sm ${
+              isChatOpen
+                ? 'bg-gradient-to-r from-cyan-600/30 to-indigo-600/30 border-cyan-400 text-cyan-200'
+                : 'bg-indigo-950/70 hover:bg-indigo-900/80 text-indigo-200 border-indigo-700/60'
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              <Bot className="w-4 h-4 text-cyan-400" />
+              <span>AI Chatbot Copilot</span>
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">
+              Prompt
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Layers Header */}
