@@ -161,27 +161,6 @@ export default function HomePage() {
     [resetHistory, showToast]
   );
 
-  // Upload handler
-  const handleFileUpload = (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      showToast('Please upload an image file (PNG, JPG, WebP)', 'error');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      if (result) {
-        setImageSrc(result);
-        setLayers([]);
-        resetHistory([], 'Uploaded Image');
-        setSelectedLayerId(null);
-        setSplitView(false);
-        showToast('Image loaded! Click "Scan Text with AI" to detect text.', 'success');
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
   // Undo / Redo Handlers
   const handleUndo = useCallback(() => {
     const prev = historyUndo();
@@ -192,7 +171,7 @@ export default function HomePage() {
       }
       showToast('Undone', 'info');
     }
-  }, [historyUndo, selectedLayerId]);
+  }, [historyUndo, selectedLayerId, showToast]);
 
   const handleRedo = useCallback(() => {
     const next = historyRedo();
@@ -203,7 +182,7 @@ export default function HomePage() {
       }
       showToast('Redone', 'info');
     }
-  }, [historyRedo, selectedLayerId]);
+  }, [historyRedo, selectedLayerId, showToast]);
 
   // Delete layer callback
   const deleteLayer = useCallback(
@@ -218,6 +197,30 @@ export default function HomePage() {
       }
     },
     [selectedLayerId, pushState]
+  );
+
+  // Upload handler
+  const handleFileUpload = useCallback(
+    (file: File) => {
+      if (!file.type.startsWith('image/')) {
+        showToast('Please upload an image file (PNG, JPG, WebP)', 'error');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        if (result) {
+          setImageSrc(result);
+          setLayers([]);
+          resetHistory([], 'Uploaded Image');
+          setSelectedLayerId(null);
+          setSplitView(false);
+          showToast('Image loaded! Click "Scan Text with AI" to detect text.', 'success');
+        }
+      };
+      reader.readAsDataURL(file);
+    },
+    [resetHistory, showToast]
   );
 
   // Clipboard paste support (Ctrl+V image)
@@ -238,7 +241,7 @@ export default function HomePage() {
 
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, []);
+  }, [handleFileUpload]);
 
   // Drag and drop image onto page
   const handleDrop = (e: React.DragEvent) => {
@@ -293,7 +296,7 @@ export default function HomePage() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [selectedLayerId, handleUndo, handleRedo]);
+  }, [selectedLayerId, handleUndo, handleRedo, deleteLayer]);
 
   // AI Scan with Gemini
   const handleScanWithAi = async () => {
